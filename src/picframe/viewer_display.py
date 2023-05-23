@@ -97,6 +97,13 @@ class ViewerDisplay:
         self.__clock_text_sz = config['clock_text_sz']
         self.__clock_format = config['clock_format']
         self.__clock_opacity = config['clock_opacity']
+
+        self.__show_sensors = config['show_sensors']
+        self.__prev_sensors_hash = None
+        self.__sensors_overlay = None
+        self.__sensors_justify = config['sensors_justify']
+        self.__sensors_text_sz = config['sensors_text_sz']
+        self.__sensors_opacity = config['sensors_opacity']
         ImageFile.LOAD_TRUNCATED_IMAGES = True  # occasional damaged file hangs app
 
     @property
@@ -203,6 +210,14 @@ class ViewerDisplay:
     @clock_is_on.setter
     def clock_is_on(self, val):
         self.__show_clock = val
+
+    @property
+    def sensors_is_on(self):
+        return self.__show_sensors
+
+    @sensors_is_on.setter
+    def sensors_is_on(self, val):
+        self.__show_sensors = val
 
     # Concatenate the specified images horizontally. Clip the taller
     # image to the height of the shorter image.
@@ -415,6 +430,56 @@ class ViewerDisplay:
         if self.__clock_overlay:
             self.__clock_overlay.sprite.draw()
 
+    # Draws the temperature and humidity info
+    def __draw_sensors(self):
+        inside_temperature = "10.4"
+        inside_humidity = "70%"
+        outside_temperature = "25.9"
+        outside_humidity = "25.9"
+
+        current_sensors_values_formatted = "10.4, 100%"
+
+        # Rebuild only if changed
+        
+        # Concatenate the values into a single string
+        concatenated_values = inside_temperature + inside_humidity + outside_temperature + outside_humidity
+
+        # Calculate the hash of the string
+        current_sensors_hash = hash(concatenated_values)
+        # 
+        # Now you can compare it with the previous hash
+        if self.__prev_sensors_hash != current_sensors_hash:
+            width = self.__display.width - 50
+            self.__sensors_overlay = pi3d.FixedString(self.__font_file, current_sensors_values_formatted, font_size=self.__sensors_text_sz,
+                                                    shader=self.__flat_shader, width=width, shadow_radius=3,
+                                                    color=(255, 255, 255, int(255 * float(self.__sensors_opacity))))
+            x = (width - self.__sensors_overlay.sprite.width) // 2
+            if self.__sensors_justify == "L":
+                x *= -1
+            elif self.__sensors_justify == "C":
+                x = 0
+            y = (self.__display.height - self.__sensors_text_sz - 20) // 2
+            self.__sensors_overlay.sprite.position(x, y, 0.1)
+            self.__prev_sensors_hash = current_sensors_hash
+
+
+        # if current_time != self.__prev_clock_time:
+        #     width = self.__display.width - 50
+        #     self.__clock_overlay = pi3d.FixedString(self.__font_file, current_time, font_size=self.__clock_text_sz,
+        #                                             shader=self.__flat_shader, width=width, shadow_radius=3,
+        #                                             color=(255, 255, 255, int(255 * float(self.__clock_opacity))))
+        #     x = (width - self.__clock_overlay.sprite.width) // 2
+        #     if self.__clock_justify == "L":
+        #         x *= -1
+        #     elif self.__clock_justify == "C":
+        #         x = 0
+        #     y = (self.__display.height - self.__clock_text_sz - 20) // 2
+        #     self.__clock_overlay.sprite.position(x, y, 0.1)
+        #     self.__prev_clock_time = current_time
+
+        if self.__sensors_overlay:
+            self.__sensors_overlay.sprite.draw()
+
     @property
     def display_width(self):
         return self.__display.width
@@ -453,6 +518,9 @@ class ViewerDisplay:
     def slideshow_is_running(self, pics=None, time_delay=200.0, fade_time=10.0, paused=False):  # noqa: C901
         if self.clock_is_on:
             self.__draw_clock()
+
+        if self.sensors_is_on:
+            self.__draw_sensors()
 
         loop_running = self.__display.loop_running()
         tm = time.time()
