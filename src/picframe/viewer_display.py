@@ -102,19 +102,23 @@ class ViewerDisplay:
         self.__clock_format = config['clock_format']
         self.__clock_opacity = config['clock_opacity']
 
+        # [ivan] sensors configs, might be a good idea to move to other script file
         self.__show_sensors = config['show_sensors']
         self.__prev_sensors_hash = None
         self.__sensors_overlays = None
-        self.__sensors_overlay = None
-        self.__sensors_overlay2 = None
         self.__sensors_justify = config['sensors_justify']
         self.__sensors_text_sz = config['sensors_text_sz']
         self.__sensors_opacity = config['sensors_opacity']
         self.__sensors_update_rate_in_seconds = config['sensors_update_rate_in_seconds']
 
+        self.__sensors_inside_gpio = 4
+        self.__sensors_inside_is_avaialble = False
+        self.__last_inside_sensor_data = {'temperature': '0.0', 'humidity': '0.0', 'pressure': '0,0'}
+
+        self.__sensors_outside_gpio = 17
+        self.__sensors_outside_is_avaialble = False
+        self.__last_outside_sensor_data = {'temperature': '0.0', 'humidity': '0.0', 'pressure': '0,0'}
         self.__last_sensor_reading_time = 0
-        self.__last_inside_sensor_data = {'temperature': '0.0', 'humidity': '0.0'}
-        self.__last_outside_sensor_data = {'temperature': '0.0', 'humidity': '0.0'}
 
         ImageFile.LOAD_TRUNCATED_IMAGES = True  # occasional damaged file hangs app
 
@@ -448,8 +452,11 @@ class ViewerDisplay:
         inside_sensors = self.__get_inside_sensors_data()
         outside_sensors = self.__get_outside_sensors_data()
 
+        inside_available = self.__sensors_inside_is_avaialble #inside_sensors.get('is_online', False);
         inside_temperature = inside_sensors.get('temperature', '0.0');
         inside_humidity = inside_sensors.get('humidity', '0');
+        
+        outside_available = self.__sensors_outside_is_avaialble #outside_sensors.get('is_online', False);
         outside_temperature = outside_sensors.get('temperature', '-');
         outside_humidity = outside_sensors.get('temperature', '-');
 
@@ -472,8 +479,6 @@ class ViewerDisplay:
             width = self.__display.width - 50
             
             self.__sensors_overlays = []
-    
-        
             
             sensor_inside_icon = pi3d.FixedString(
                 self.__font_icon_file, 
@@ -511,25 +516,6 @@ class ViewerDisplay:
                 shadow_radius=3,
                 color=(255, 255, 255, int(255 * float(self.__sensors_opacity))))
 
-
-            # self.__sensors_overlay2 = pi3d.FixedString(
-            #     self.__font_icon_file, 
-            #     "\uf015", 
-            #     font_size=self.__sensors_text_sz,
-            #     shader=self.__flat_shader, 
-            #     width=78, 
-            #     shadow_radius=3,
-            #     color=(255, 255, 255, int(255 * float(self.__sensors_opacity))))
-
-            # self.__sensors_overlay = pi3d.FixedString(
-            #     self.__font_file, 
-            #     current_sensors_values_formatted, 
-            #     font_size=self.__sensors_text_sz,
-            #     shader=self.__flat_shader, 
-            #     width=width, 
-            #     shadow_radius=3,
-            #     color=(255, 255, 255, int(255 * float(self.__sensors_opacity))))
-            
             # self.__logger.warning(f"Display Width: {self.__display.width}, Display Height: {self.__display.height}")
             
             y = (self.__display.height - self.__sensors_text_sz - 20) // 2
@@ -537,36 +523,33 @@ class ViewerDisplay:
             x = (width - sensor_inside_icon.sprite.width) // 2
             x_with_adjusments = x * -1
             sensor_inside_icon.sprite.position(x_with_adjusments, y, 0.1)
-            self.__logger.warning(f"sensor_inside_icon - x:{x_with_adjusments} y:{y} size: {sensor_inside_icon.sprite.width}x{sensor_inside_icon.sprite.height}")
+            # self.__logger.warning(f"sensor_inside_icon - x:{x_with_adjusments} y:{y} size: {sensor_inside_icon.sprite.width}x{sensor_inside_icon.sprite.height}")
 
             x = ((width - sensor_inside_value.sprite.width) // 2) - sensor_inside_icon.sprite.width
             x_with_adjusments = x * -1
             sensor_inside_value.sprite.position(x_with_adjusments, y, 0.1)
-            self.__logger.warning(f"sensor_inside_value - x:{x_with_adjusments} y:{y} size: {sensor_inside_value.sprite.width}x{sensor_inside_value.sprite.height}")
+            # self.__logger.warning(f"sensor_inside_value - x:{x_with_adjusments} y:{y} size: {sensor_inside_value.sprite.width}x{sensor_inside_value.sprite.height}")
 
             x = ((width - sensor_outside_icon.sprite.width) // 2) - 20 - sensor_inside_icon.sprite.width - sensor_inside_value.sprite.width
             x_with_adjusments = x * -1
             sensor_outside_icon.sprite.position(x_with_adjusments, y, 0.1)
-            self.__logger.warning(f"sensor_outside_icon - x:{x_with_adjusments} y:{y} size: {sensor_outside_icon.sprite.width}x{sensor_outside_icon.sprite.height}")
+            # self.__logger.warning(f"sensor_outside_icon - x:{x_with_adjusments} y:{y} size: {sensor_outside_icon.sprite.width}x{sensor_outside_icon.sprite.height}")
 
             x = ((width - sensor_outside_value.sprite.width) // 2) - 20 - sensor_inside_icon.sprite.width - sensor_inside_value.sprite.width - sensor_outside_icon.sprite.width
             x_with_adjusments = x * -1
             sensor_outside_value.sprite.position(x_with_adjusments, y, 0.1)
-            self.__logger.warning(f"sensor_outside_value - x:{x_with_adjusments} y:{y} size: {sensor_outside_value.sprite.width}x{sensor_outside_value.sprite.height}")
-
-
-
-
-            # xo = (width - sensor_inside_icon.sprite.width) // 2
-            # x = ((width - sensor_inside_value.sprite.width) // 2 ) - sensor_inside_icon.sprite.width
-
+            # self.__logger.warning(f"sensor_outside_value - x:{x_with_adjusments} y:{y} size: {sensor_outside_value.sprite.width}x{sensor_outside_value.sprite.height}")
             
-            
-            
-            self.__sensors_overlays.append(sensor_inside_icon)
-            self.__sensors_overlays.append(sensor_inside_value)
-            self.__sensors_overlays.append(sensor_outside_icon)
-            self.__sensors_overlays.append(sensor_outside_value)
+            if (inside_available):
+                self.__logger.warning(f"Inside sensors available")
+
+                self.__sensors_overlays.append(sensor_inside_icon)
+                self.__sensors_overlays.append(sensor_inside_value)
+
+            if (outside_available):
+                self.__logger.warning(f"Outside sensors available")
+                self.__sensors_overlays.append(sensor_outside_icon)
+                self.__sensors_overlays.append(sensor_outside_value)
             
             # self.__logger.warning(f"Display Width: {self.__display.width}, Display Height: {self.__display.height}")
             # self.__logger.warning(f"sensor_inside_icon - w:{sensor_inside_icon.sprite.width}, h:{sensor_inside_value.sprite.height}")
@@ -584,93 +567,89 @@ class ViewerDisplay:
             # # self.__sensors_overlay.sprite.position(x+self.__sensors_text_sz*3.5, y, 0.1)
             
             
-            # self.__sensors_overlay.sprite.position(x, 0, 0.1)
-            # self.__sensors_overlay2.sprite.position(xo, 0, 0.1)
             self.__prev_sensors_hash = current_sensors_hash
-
-            # self.__logger.warning(f"Display Width: {self.__display.width}, Display Height: {self.__display.height}")
-            # self.__logger.warning(f"sensors_overlay Width: {self.__sensors_overlay.sprite.width}, Height: {self.__sensors_overlay.sprite.height}")
-            
-            # self.__logger.warning(f"sensors_overlay2 Width: {self.__sensors_overlay2.sprite.width}, Height: {self.__sensors_overlay2.sprite.height}")
 
         if self.__sensors_overlays:
             for overlay in self.__sensors_overlays:
-                # self.__logger.warning(f"overlay draw")
                 overlay.sprite.draw()
-            # self.__sensors_overlay2.sprite.draw()
-            # self.__sensors_overlay.sprite.draw()
 
     def __get_inside_sensors_data(self):
-        
         current_time = time.time()
-        if current_time - self.__last_sensor_reading_time < self.__sensors_update_rate_in_seconds:
-            
-            # If less than 60 seconds have passed since the last reading, return the last data
-            self.__logger.warning(f"inside_values [cached]: {self.__last_inside_sensor_data}")
+        if current_time - self.__last_sensor_reading_time < self.__sensors_update_rate_in_seconds:            
+            # self.__logger.warning(f"inside_values [cached]: {self.__last_inside_sensor_data}")
             return self.__last_inside_sensor_data
         
         # Sensor type
         sensor = Adafruit_DHT.DHT22
 
         # GPIO Pin number
-        pin = 4
+        pin = self.__sensors_inside_gpio
 
         # Get a reading from the sensor
         humidity, temperature = Adafruit_DHT.read_retry(sensor, pin)
-        # humidity = 10.3
-        # temperature = 1.3
 
         # If the reading failed, use 0 as the default value
+        is_sensor_online = True
         if humidity is None:
+            is_sensor_online = False
             humidity = 0.0
         if temperature is None:
+            is_sensor_online = False
             temperature = 0.0
 
         # Prepare the result as a dictionary
         self.__last_inside_sensor_data = {
+            'is_online': is_sensor_online,
             'temperature': f"{temperature:.1f}",
             'humidity': f"{humidity:.1f}"
         }
 
         self.__logger.warning(f"inside_values [new]: {self.__last_inside_sensor_data}")
         
+        # Indicate that is is not available
+        self.__sensors_inside_is_avaialble = is_sensor_online
+
         # Update the last reading time
         self.__last_sensor_reading_time = current_time
 
         return self.__last_inside_sensor_data
     
     def __get_outside_sensors_data(self):
-        
         current_time = time.time()
         if current_time - self.__last_sensor_reading_time < self.__sensors_update_rate_in_seconds:
-            
-            # If less than 60 seconds have passed since the last reading, return the last data
-            self.__logger.warning(f"outside sensor values [cached]: {self.__last_outside_sensor_data}")
+            # self.__logger.warning(f"outside sensor values [cached]: {self.__last_outside_sensor_data}")
             return self.__last_outside_sensor_data
         
         # Sensor type
         sensor = Adafruit_DHT.DHT22
 
         # GPIO Pin number
-        pin = 17
+        pin = self.__sensors_outside_gpio
 
         # Get a reading from the sensor
         humidity, temperature = Adafruit_DHT.read_retry(sensor, pin)
 
         # If the reading failed, use 0 as the default value
+        is_sensor_online = True
         if humidity is None:
+            is_sensor_online = False
             humidity = 0.0
         if temperature is None:
+            is_sensor_online = False
             temperature = 0.0
 
         # Prepare the result as a dictionary
         self.__last_outside_sensor_data = {
+            'is_online': is_sensor_online,
             'temperature': f"{temperature:.1f}",
             'humidity': f"{humidity:.1f}"
         }
 
         self.__logger.warning(f"outside sensor values [new]: {self.__last_outside_sensor_data}")
         
+        # Indicate that is is not available
+        self.__sensors_outside_is_avaialble = is_sensor_online
+
         # Update the last reading time
         self.__last_sensor_reading_time = current_time
 
