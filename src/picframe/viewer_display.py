@@ -5,11 +5,13 @@ import logging
 import os
 import numpy as np
 from PIL import Image, ImageFilter, ImageFile
-from picframe import mat_image, get_image_meta
+from picframe import mat_image, get_image_meta, get_sensors_data
 from datetime import datetime
 
-import Adafruit_DHT
 import time
+import Adafruit_DHT
+import threading
+# from get_sensors_data import SensorData
 
 # supported display modes for display switch
 dpms_mode = ("unsupported", "pi", "x_dpms")
@@ -111,13 +113,14 @@ class ViewerDisplay:
         self.__sensors_opacity = config['sensors_opacity']
         self.__sensors_update_rate_in_seconds = config['sensors_update_rate_in_seconds']
 
-        self.__sensors_inside_gpio = 4
-        self.__sensors_inside_is_avaialble = False
-        self.__last_inside_sensor_data = {'temperature': '0.0', 'humidity': '0.0', 'pressure': '0,0'}
+        self.__sensors_data = get_sensors_data.SensorData()
+        # self.__sensors_inside_gpio = 4
+        # self.__sensors_inside_is_avaialble = False
+        # self.__last_inside_sensor_data = {'temperature': '0.0', 'humidity': '0.0', 'pressure': '0,0'}
 
-        self.__sensors_outside_gpio = 17
-        self.__sensors_outside_is_avaialble = False
-        self.__last_outside_sensor_data = {'temperature': '0.0', 'humidity': '0.0', 'pressure': '0,0'}
+        # self.__sensors_outside_gpio = 23
+        # self.__sensors_outside_is_avaialble = False
+        # self.__last_outside_sensor_data = {'temperature': '0.0', 'humidity': '0.0', 'pressure': '0,0'}
         self.__last_sensor_reading_time = 0
 
         ImageFile.LOAD_TRUNCATED_IMAGES = True  # occasional damaged file hangs app
@@ -449,16 +452,18 @@ class ViewerDisplay:
     # Draws the temperature and humidity info
     def __draw_sensors(self):
 
-        inside_sensors = self.__get_inside_sensors_data()
-        outside_sensors = self.__get_outside_sensors_data()
+        # inside_sensors = self.__get_inside_sensors_data()
+        # outside_sensors = self.__get_outside_sensors_data()
+        inside_sensors = self.__sensors_data.get_last_inside_sensor_data()
+        outside_sensors = self.__sensors_data.get_last_outside_sensor_data()
 
-        inside_available = self.__sensors_inside_is_avaialble #inside_sensors.get('is_online', False);
+        inside_available = inside_sensors.get('is_online', False);
         inside_temperature = inside_sensors.get('temperature', '0.0');
         inside_humidity = inside_sensors.get('humidity', '0');
         
-        outside_available = self.__sensors_outside_is_avaialble #outside_sensors.get('is_online', False);
+        outside_available = outside_sensors.get('is_online', False);
         outside_temperature = outside_sensors.get('temperature', '-');
-        outside_humidity = outside_sensors.get('temperature', '-');
+        outside_humidity = outside_sensors.get('humidity', '-');
 
         current_sensors_values_formatted = f"{inside_temperature}° / {inside_humidity}%"
         current_sensors_values_outside_formatted = f"{outside_temperature}° / {outside_humidity}%"
@@ -607,7 +612,7 @@ class ViewerDisplay:
         self.__logger.warning(f"inside_values [new]: {self.__last_inside_sensor_data}")
         
         # Indicate that is is not available
-        self.__sensors_inside_is_avaialble = is_sensor_online
+        # self.__sensors_inside_is_avaialble = is_sensor_online
 
         # Update the last reading time
         self.__last_sensor_reading_time = current_time
@@ -648,7 +653,7 @@ class ViewerDisplay:
         self.__logger.warning(f"outside sensor values [new]: {self.__last_outside_sensor_data}")
         
         # Indicate that is is not available
-        self.__sensors_outside_is_avaialble = is_sensor_online
+        # self.__sensors_outside_is_avaialble = is_sensor_online
 
         # Update the last reading time
         self.__last_sensor_reading_time = current_time
@@ -788,4 +793,5 @@ class ViewerDisplay:
         return (loop_running, False)  # now returns tuple with skip image flag added
 
     def slideshow_stop(self):
+        self.__sensors_data.stop()
         self.__display.destroy()
