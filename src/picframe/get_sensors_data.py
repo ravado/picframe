@@ -7,12 +7,12 @@ import adafruit_bme280
 from adafruit_bme280 import basic as adafruit_bme280
 
 class SensorData:
-    def __init__(self):
+    def __init__(self, update_rate_in_seconds):
         self.outside_gpio = 4
         self.inside_i2c_address = 0x76
 
         self.last_reading_time = 0
-        self.sensors_update_rate_in_seconds = 10
+        self.sensors_update_rate_in_seconds = update_rate_in_seconds
         
         self.inside_sensor_data = {}
         self.outside_sensor_data = {}
