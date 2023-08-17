@@ -437,6 +437,30 @@ class ViewerDisplay:
         if self.__clock_overlay:
             self.__clock_overlay.sprite.draw()
 
+    def __create_fixed_string_for_sensors(self, text, width):
+        result = pi3d.FixedString(
+            self.__font_file, 
+            text,
+            font_size=self.__sensors_text_sz,
+            shader=self.__flat_shader, 
+            width=width,
+            shadow_radius=3,
+            color=(255, 255, 255, int(255 * float(self.__sensors_opacity))))
+        
+        return result
+    
+    def __create_icon_for_sensors(self, text, width):
+        result = pi3d.FixedString(
+            self.__font_icon_file, 
+            text,
+            font_size=self.__sensors_text_sz,
+            shader=self.__flat_shader, 
+            width=width,
+            shadow_radius=3,
+            color=(255, 255, 255, int(255 * float(self.__sensors_opacity))))
+        
+        return result
+
     # Draws the temperature and humidity info
     def __draw_sensors(self):
 
@@ -453,7 +477,7 @@ class ViewerDisplay:
         outside_humidity = outside_sensors.get('humidity', '-');
         outside_pressure = inside_sensors.get('pressure', '-');
 
-        current_sensors_values_formatted = f"{inside_temperature}° / {inside_humidity}%"
+        current_sensors_values_formatted = f"{inside_temperature}° / {inside_humidity}% / {inside_pressure} hPa"
         current_sensors_values_outside_formatted = f"{outside_temperature}° / {outside_humidity}%"
 
         # Rebuild only if changed
@@ -472,65 +496,64 @@ class ViewerDisplay:
             width = self.__display.width - 50
             
             self.__sensors_overlays = []
-            
-            sensor_inside_icon = pi3d.FixedString(
-                self.__font_icon_file, 
-                "\uf015", # the house icon
-                font_size=self.__sensors_text_sz,
-                shader=self.__flat_shader, 
-                width=78, 
-                shadow_radius=3,
-                color=(255, 255, 255, int(255 * float(self.__sensors_opacity))))
 
-            sensor_inside_value = pi3d.FixedString(
-                self.__font_file, 
-                current_sensors_values_formatted, 
-                font_size=self.__sensors_text_sz,
-                shader=self.__flat_shader, 
-                width=width, 
-                shadow_radius=3,
-                color=(255, 255, 255, int(255 * float(self.__sensors_opacity))))
-            
-            sensor_outside_icon = pi3d.FixedString(
-                self.__font_icon_file, 
-                "\ue587", # the tree
-                font_size=self.__sensors_text_sz,
-                shader=self.__flat_shader, 
-                width=78, 
-                shadow_radius=3,
-                color=(255, 255, 255, int(255 * float(self.__sensors_opacity))))
+            sensor_inside_icon = self.__create_icon_for_sensors(
+                text="\uf015", # the house icon
+                width=width)
 
-            sensor_outside_value = pi3d.FixedString(
-                self.__font_file, 
-                current_sensors_values_outside_formatted, 
-                font_size=self.__sensors_text_sz,
-                shader=self.__flat_shader, 
-                width=width, 
-                shadow_radius=3,
-                color=(255, 255, 255, int(255 * float(self.__sensors_opacity))))
+            sensor_inside_value = self.__create_fixed_string_for_sensors(
+                text=current_sensors_values_formatted,
+                width=width)
+            
+            sensor_outside_icon = self.__create_icon_for_sensors(
+                text="\ue587", # the tree
+                width=width)
+
+            sensor_outside_value = self.__create_fixed_string_for_sensors(
+                text=current_sensors_values_outside_formatted, 
+                width=width)
 
             # self.__logger.warning(f"Display Width: {self.__display.width}, Display Height: {self.__display.height}")
             
             y = (self.__display.height - self.__sensors_text_sz - 20) // 2
-
             x = (width - sensor_inside_icon.sprite.width) // 2
             x_with_adjusments = x * -1
+            total_width = 0
+
+            #1 position inside icon
             sensor_inside_icon.sprite.position(x_with_adjusments, y, 0.1)
+            total_width += sensor_inside_icon.sprite.width
+            # self.__logger.warning(f"total_width: {total_width}")
             # self.__logger.warning(f"sensor_inside_icon - x:{x_with_adjusments} y:{y} size: {sensor_inside_icon.sprite.width}x{sensor_inside_icon.sprite.height}")
 
-            x = ((width - sensor_inside_value.sprite.width) // 2) - sensor_inside_icon.sprite.width
+            x = ((width - sensor_inside_value.sprite.width) // 2) - total_width #sensor_inside_icon.sprite.width
             x_with_adjusments = x * -1
+            
+            #2 position inside value
             sensor_inside_value.sprite.position(x_with_adjusments, y, 0.1)
+            total_width += sensor_inside_value.sprite.width
+            # self.__logger.warning(f"total_width: {total_width}")
             # self.__logger.warning(f"sensor_inside_value - x:{x_with_adjusments} y:{y} size: {sensor_inside_value.sprite.width}x{sensor_inside_value.sprite.height}")
 
-            x = ((width - sensor_outside_icon.sprite.width) // 2) - 20 - sensor_inside_icon.sprite.width - sensor_inside_value.sprite.width
+            if (inside_available == False):
+                total_width = 0;
+
+            x = ((width - sensor_outside_icon.sprite.width) // 2) - 20 - total_width #sensor_inside_icon.sprite.width - sensor_inside_value.sprite.width
             x_with_adjusments = x * -1
+            
+            #3 position outside icon
             sensor_outside_icon.sprite.position(x_with_adjusments, y, 0.1)
+            total_width += sensor_outside_icon.sprite.width
+            # self.__logger.warning(f"total_width: {total_width}")
             # self.__logger.warning(f"sensor_outside_icon - x:{x_with_adjusments} y:{y} size: {sensor_outside_icon.sprite.width}x{sensor_outside_icon.sprite.height}")
 
-            x = ((width - sensor_outside_value.sprite.width) // 2) - 20 - sensor_inside_icon.sprite.width - sensor_inside_value.sprite.width - sensor_outside_icon.sprite.width
+            x = ((width - sensor_outside_value.sprite.width) // 2) - 20 - total_width #sensor_inside_icon.sprite.width - sensor_inside_value.sprite.width - sensor_outside_icon.sprite.width
             x_with_adjusments = x * -1
+
+            #4 position outside value
             sensor_outside_value.sprite.position(x_with_adjusments, y, 0.1)
+            total_width += sensor_outside_value.sprite.width
+            # self.__logger.warning(f"total_width: {total_width}")
             # self.__logger.warning(f"sensor_outside_value - x:{x_with_adjusments} y:{y} size: {sensor_outside_value.sprite.width}x{sensor_outside_value.sprite.height}")
             
             if (inside_available):

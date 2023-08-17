@@ -77,8 +77,8 @@ class SensorData:
         return {
             'is_online': is_sensor_online,
             'temperature': f"{temperature:.1f}",
-            'humidity': f"{humidity:.1f}",
-            'pressure': f"{pressure:.1f}"
+            'humidity': f"{humidity:.0f}",
+            'pressure': f"{pressure:.0f}"
         }
 
     def get_last_inside_sensor_data(self):
