@@ -437,30 +437,6 @@ class ViewerDisplay:
         if self.__clock_overlay:
             self.__clock_overlay.sprite.draw()
 
-    def __create_fixed_string_for_sensors(self, text, width):
-        result = pi3d.FixedString(
-            self.__font_file, 
-            text,
-            font_size=self.__sensors_text_sz,
-            shader=self.__flat_shader, 
-            width=width,
-            shadow_radius=3,
-            color=(255, 255, 255, int(255 * float(self.__sensors_opacity))))
-        
-        return result
-    
-    def __create_icon_for_sensors(self, text, width):
-        result = pi3d.FixedString(
-            self.__font_icon_file, 
-            text,
-            font_size=self.__sensors_text_sz,
-            shader=self.__flat_shader, 
-            width=width,
-            shadow_radius=3,
-            color=(255, 255, 255, int(255 * float(self.__sensors_opacity))))
-        
-        return result
-
     # Draws the temperature and humidity info
     def __draw_sensors(self):
 
@@ -514,48 +490,33 @@ class ViewerDisplay:
                 width=width)
 
             # self.__logger.warning(f"Display Width: {self.__display.width}, Display Height: {self.__display.height}")
+
+            #
+            # Position of sensors texts
+            # 
             
             y = (self.__display.height - self.__sensors_text_sz - 20) // 2
-            x = (width - sensor_inside_icon.sprite.width) // 2
-            x_with_adjusments = x * -1
             total_width = 0
 
-            #1 position inside icon
-            sensor_inside_icon.sprite.position(x_with_adjusments, y, 0.1)
-            total_width += sensor_inside_icon.sprite.width
-            # self.__logger.warning(f"total_width: {total_width}")
-            # self.__logger.warning(f"sensor_inside_icon - x:{x_with_adjusments} y:{y} size: {sensor_inside_icon.sprite.width}x{sensor_inside_icon.sprite.height}")
+            # inside icon
+            total_width = self.__position_sprite(sensor_inside_icon, y, total_width, width)
 
-            x = ((width - sensor_inside_value.sprite.width) // 2) - total_width #sensor_inside_icon.sprite.width
-            x_with_adjusments = x * -1
-            
-            #2 position inside value
-            sensor_inside_value.sprite.position(x_with_adjusments, y, 0.1)
-            total_width += sensor_inside_value.sprite.width
-            # self.__logger.warning(f"total_width: {total_width}")
-            # self.__logger.warning(f"sensor_inside_value - x:{x_with_adjusments} y:{y} size: {sensor_inside_value.sprite.width}x{sensor_inside_value.sprite.height}")
+            # inside value
+            total_width = self.__position_sprite(sensor_inside_value, y, total_width, width)
 
-            if (inside_available == False):
-                total_width = 0;
+            # [ivan] this makes sure the outside sensors values will be 
+            # displayed from the start of the screen if inside data is missing
+            if (not inside_available):
+                total_width = 0
 
-            x = ((width - sensor_outside_icon.sprite.width) // 2) - 20 - total_width #sensor_inside_icon.sprite.width - sensor_inside_value.sprite.width
-            x_with_adjusments = x * -1
-            
-            #3 position outside icon
-            sensor_outside_icon.sprite.position(x_with_adjusments, y, 0.1)
-            total_width += sensor_outside_icon.sprite.width
-            # self.__logger.warning(f"total_width: {total_width}")
-            # self.__logger.warning(f"sensor_outside_icon - x:{x_with_adjusments} y:{y} size: {sensor_outside_icon.sprite.width}x{sensor_outside_icon.sprite.height}")
+            padding = 20
 
-            x = ((width - sensor_outside_value.sprite.width) // 2) - 20 - total_width #sensor_inside_icon.sprite.width - sensor_inside_value.sprite.width - sensor_outside_icon.sprite.width
-            x_with_adjusments = x * -1
+            # outside icon
+            total_width = self.__position_sprite(sensor_outside_icon, y, total_width, width, padding)
 
-            #4 position outside value
-            sensor_outside_value.sprite.position(x_with_adjusments, y, 0.1)
-            total_width += sensor_outside_value.sprite.width
-            # self.__logger.warning(f"total_width: {total_width}")
-            # self.__logger.warning(f"sensor_outside_value - x:{x_with_adjusments} y:{y} size: {sensor_outside_value.sprite.width}x{sensor_outside_value.sprite.height}")
-            
+            # outside value
+            total_width = self.__position_sprite(sensor_outside_value, y, total_width, width, padding)
+
             if (inside_available):
                 self.__logger.warning(f"Inside sensors available")
 
@@ -588,6 +549,36 @@ class ViewerDisplay:
         if self.__sensors_overlays:
             for overlay in self.__sensors_overlays:
                 overlay.sprite.draw()
+
+    def __position_sprite(self, sprite_to_position, y, total_width, width, padding=0):
+        x = ((width - sprite_to_position.sprite.width) // 2) - padding - total_width
+        x_with_adjustments = x * -1
+        sprite_to_position.sprite.position(x_with_adjustments, y, 0.1)
+        return total_width + sprite_to_position.sprite.width
+
+    def __create_fixed_string_for_sensors(self, text, width):
+        result = pi3d.FixedString(
+            self.__font_file, 
+            text,
+            font_size=self.__sensors_text_sz,
+            shader=self.__flat_shader, 
+            width=width,
+            shadow_radius=3,
+            color=(255, 255, 255, int(255 * float(self.__sensors_opacity))))
+        
+        return result
+    
+    def __create_icon_for_sensors(self, text, width):
+        result = pi3d.FixedString(
+            self.__font_icon_file, 
+            text,
+            font_size=self.__sensors_text_sz,
+            shader=self.__flat_shader, 
+            width=width,
+            shadow_radius=3,
+            color=(255, 255, 255, int(255 * float(self.__sensors_opacity))))
+        
+        return result
 
     @property
     def display_width(self):
