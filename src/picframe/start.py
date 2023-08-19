@@ -5,7 +5,7 @@ import locale
 import sys
 from distutils.dir_util import copy_tree
 
-from picframe import model, viewer_display, controller, __version__
+from picframe import model, viewer_display, controller, gpio_actions, __version__
 
 PICFRAME_DATA_DIR = 'picframe_data'
 
@@ -132,6 +132,8 @@ def main():
 
     v = viewer_display.ViewerDisplay(m.get_viewer_config())
     c = controller.Controller(m, v)
+    gpio_controller = gpio_actions.GpioController(c)
+    
     c.start()
     c.loop()
     c.stop()
