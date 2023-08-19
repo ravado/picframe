@@ -8,8 +8,6 @@ from PIL import Image, ImageFilter, ImageFile
 from picframe import mat_image, get_image_meta, get_sensors_data
 from datetime import datetime
 
-# from get_sensors_data import SensorData
-
 # supported display modes for display switch
 dpms_mode = ("unsupported", "pi", "x_dpms")
 
