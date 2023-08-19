@@ -1,6 +1,7 @@
 configuration.yaml
 oldcode/
 docs/diagrams/out/
+picframe_data/data/pictureframe.db3
 
 #ide settings
 .vscode/
