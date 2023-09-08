@@ -43,10 +43,10 @@ class SensorData:
             humidity = bme280.humidity
             pressure = bme280.pressure
             
-            print("BME280: ---- ")
-            print(f"Temperature: {bme280.temperature} °C")
-            print(f"Humidity: {bme280.humidity} %")
-            print(f"Pressure: {bme280.pressure} hPa")
+            # print("BME280: ---- ")
+            # print(f"Temperature: {bme280.temperature} °C")
+            # print(f"Humidity: {bme280.humidity} %")
+            # print(f"Pressure: {bme280.pressure} hPa")
 
         except Exception as e:
             temperature = None
@@ -58,9 +58,9 @@ class SensorData:
     def get_outside_sensor_data(self):
         humidity, temperature = Adafruit_DHT.read_retry(Adafruit_DHT.DHT22, self.outside_gpio)
 
-        print("DHT22: ---- ")
-        print(f"Temperature: {temperature} °C")
-        print(f"Humidity: {humidity} %")
+        # print("DHT22: ---- ")
+        # print(f"Temperature: {temperature} °C")
+        # print(f"Humidity: {humidity} %")
 
         return self.format_sensor_data(temperature, humidity)
 
