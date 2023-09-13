@@ -111,6 +111,9 @@ class ViewerDisplay:
 
         ImageFile.LOAD_TRUNCATED_IMAGES = True  # occasional damaged file hangs app
 
+    def get_sensors_data(self):
+        return self.__sensors_data
+
     @property
     def display_is_on(self):
         if self.__display_power == 0:
@@ -451,8 +454,8 @@ class ViewerDisplay:
         outside_humidity = outside_sensors.get('humidity', '-');
         outside_pressure = inside_sensors.get('pressure', '-');
 
-        current_sensors_values_formatted = f"{inside_temperature}° / {inside_humidity}% / {inside_pressure} hPa"
-        current_sensors_values_outside_formatted = f"{outside_temperature}° / {outside_humidity}%"
+        current_sensors_values_formatted = f"{inside_temperature}° • {inside_humidity}% • {inside_pressure} hPa"
+        current_sensors_values_outside_formatted = f"{outside_temperature}° • {outside_humidity}%"
 
         # Rebuild only if changed
         
@@ -464,7 +467,7 @@ class ViewerDisplay:
         # 
         # Now you can compare it with the previous hash
         if self.__prev_sensors_hash != current_sensors_hash:
-            self.__logger.warning(f"Sensor data has changes, redraw it now")
+            self.__logger.debug(f"Sensor data has changes, redraw it now")
 
 
             width = self.__display.width - 50
@@ -516,13 +519,13 @@ class ViewerDisplay:
             total_width = self.__position_sprite(sensor_outside_value, y, total_width, width, padding)
 
             if (inside_available):
-                self.__logger.warning(f"Inside sensors available")
+                self.__logger.debug(f"Inside sensors available")
 
                 self.__sensors_overlays.append(sensor_inside_icon)
                 self.__sensors_overlays.append(sensor_inside_value)
 
             if (outside_available):
-                self.__logger.warning(f"Outside sensors available")
+                self.__logger.debug(f"Outside sensors available")
                 self.__sensors_overlays.append(sensor_outside_icon)
                 self.__sensors_overlays.append(sensor_outside_value)
             

@@ -364,6 +364,23 @@ class Controller:
                                                 keyfile=self.__http_config['keyfile'],
                                                 certfile=self.__http_config['certfile'],
                                                 server_side=True)
+        
+        # subscibe to sensors updates
+        self.__viewer.get_sensors_data().subscribe_to_sensors_updates(self.handle_temperature_update)
+
+    def get_sensors_data(self):
+        return self.__viewer.get_sensors_data()
+    
+    def get_inside_sensors_data(self):
+        return self.__viewer.get_sensors_data().get_last_inside_sensor_data()
+    
+    def get_outside_sensors_data(self):
+        return self.__viewer.get_sensors_data().get_last_outside_sensor_data()
+
+    def handle_temperature_update(self):
+        temp = self.__viewer.get_sensors_data().get_last_inside_sensor_data()
+        # print(f"Temperature updated: {temp}")
+        self.publish_state()
 
     def stop(self):
         self.keep_looping = False

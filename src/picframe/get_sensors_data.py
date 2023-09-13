@@ -3,14 +3,19 @@ import threading
 import Adafruit_DHT
 import board
 import busio
+import json
+import hashlib
 import adafruit_bme280
 from adafruit_bme280 import basic as adafruit_bme280
 
 class SensorData:
     def __init__(self, update_rate_in_seconds):
+        self.__prev_sensors_hash = None
+
         self.outside_gpio = 4
         self.inside_i2c_address = 0x76
 
+        self.sensors_update_subscribers = []
         self.last_reading_time = 0
         self.sensors_update_rate_in_seconds = update_rate_in_seconds
         
@@ -21,6 +26,10 @@ class SensorData:
         self.thread = threading.Thread(target=self.fetch_sensor_data)
         self.thread.start()
 
+    def subscribe_to_sensors_updates(self, callback):
+        # print(f"SensorData: Subscribed")
+        self.sensors_update_subscribers.append(callback)
+
     def fetch_sensor_data(self):
         while not self.stop_thread:
             current_time = time.time()
@@ -28,6 +37,18 @@ class SensorData:
                 self.inside_sensor_data = self.get_inside_sensor_data()
                 self.outside_sensor_data = self.get_outside_sensor_data()
                 self.last_reading_time = current_time
+                
+                # # Fire event for subscribers only if data has really changed
+                
+                # all_values_string = self.inside_sensor_data + self.outside_sensor_data;
+                # current_sensors_hash = hash(all_values_string)
+                
+                # if (self.__prev_sensors_hash != current_sensors_hash):
+                #     self.__notify_subscribers()
+                
+                # self.__prev_sensors_hash = current_sensors_hash
+                self.__notify_subscribers_if_data_really_changed()
+
             time.sleep(1)
 
     def get_inside_sensor_data(self):
@@ -54,7 +75,7 @@ class SensorData:
             pressure = None
 
         return self.format_sensor_data(temperature, humidity, pressure)
-
+    
     def get_outside_sensor_data(self):
         humidity, temperature = Adafruit_DHT.read_retry(Adafruit_DHT.DHT22, self.outside_gpio)
 
@@ -89,3 +110,23 @@ class SensorData:
 
     def stop(self):
         self.stop_thread = True
+    
+    def __notify_subscribers_if_data_really_changed(self):
+        all_values_string = json.dumps(self.inside_sensor_data) + json.dumps(self.outside_sensor_data)
+        current_sensors_hash = hash(all_values_string)
+        
+        # print(f"Prev hash: {self.__prev_sensors_hash}, currentHash: {current_sensors_hash}")
+        if (self.__prev_sensors_hash != current_sensors_hash):
+            self.__notify_subscribers()
+        
+        self.__prev_sensors_hash = current_sensors_hash
+
+    def __notify_subscribers(self):
+        # print(f"SensorData: Notify subscribers")
+        # Notify all subscribers
+        for subscriber in self.sensors_update_subscribers:
+            subscriber()
+    
+    def __calculate_hash(dictionary):
+        json_string = json.dumps(dictionary, sort_keys=True)
+        return hashlib.sha256(json_string.encode()).hexdigest()
