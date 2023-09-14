@@ -99,7 +99,7 @@ class GpioController:
         GPIO.setup(self.__clap_sensor_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
 
         # Add an event listener to detect claps
-        GPIO.add_event_detect(self.__clap_sensor_pin, GPIO.FALLING, callback=self.clap_detected, bouncetime=300)
+        GPIO.add_event_detect(self.__clap_sensor_pin, GPIO.FALLING, callback=self.clap_detected, bouncetime=100)
 
     def __del__(self):
         # Perform the cleanup operations here
