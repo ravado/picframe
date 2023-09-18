@@ -3,6 +3,7 @@ oldcode/
 docs/diagrams/out/
 picframe_data/data/pictureframe.db3
 picframe_data/log.txt
+picframe_data/cron_log.txt
 
 #ide settings
 .vscode/
