@@ -12,7 +12,7 @@ class SensorData:
     def __init__(self, update_rate_in_seconds):
         self.__prev_sensors_hash = None
 
-        self.outside_gpio = 4
+        self.outside_gpio = 17
         self.inside_i2c_address = 0x76
 
         self.sensors_update_subscribers = []

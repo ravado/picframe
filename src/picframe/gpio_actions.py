@@ -11,7 +11,7 @@ class GpioController:
 
         self.__prev_touch_sensor_pin = 20 # GPIO for previous button
         self.__next_touch_sensor_pin = 21 # GPIO for next button
-        self.__clap_sensor_pin = 17 # GPIO for clapper
+        self.__clap_sensor_pin = 4 # GPIO for clapper
 
         # Variables to keep track of claps
         self.__clap_count = 0
