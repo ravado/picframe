@@ -478,7 +478,7 @@ class InterfaceMQTT:
         self.__setup_select(self.__client, "directory", dir_list,
                             "mdi:folder-multiple-image", available_topic, init=False)
 
-        self.__logger.info("Send sensor state: %s", sensor_state_payload)
+        self.__logger.debug("Send sensor state: %s", sensor_state_payload)
         sensor_state_topic = sensor_topic_head + "/state"
         self.__client.publish(sensor_state_topic, json.dumps(sensor_state_payload), qos=0, retain=False)
 
