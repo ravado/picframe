@@ -95,6 +95,9 @@ class SensorData:
             temperature = 0.0
         if pressure is None:
             pressure = 0.0
+
+        # convert hPa to mmHg
+        pressure = pressure * 0.75006
         return {
             'is_online': is_sensor_online,
             'temperature': f"{temperature:.1f}",

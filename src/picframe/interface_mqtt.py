@@ -87,10 +87,10 @@ class InterfaceMQTT:
         
         self.__setup_sensor(client, "inside_temperature", "mdi:thermometer", available_topic, entity_category="diagnostic", unit_of_measurement="°C")
         self.__setup_sensor(client, "inside_humidity", "mdi:water-percent", available_topic, entity_category="diagnostic", unit_of_measurement="%")
-        self.__setup_sensor(client, "inside_pressure", "mdi:cloud", available_topic, entity_category="diagnostic", unit_of_measurement="hPa")
+        self.__setup_sensor(client, "inside_pressure", "mdi:cloud", available_topic, entity_category="diagnostic", unit_of_measurement="mmHg")
         self.__setup_sensor(client, "outside_temperature", "mdi:thermometer", available_topic, entity_category="diagnostic", unit_of_measurement="°C")
         self.__setup_sensor(client, "outside_humidity", "mdi:water-percent", available_topic, entity_category="diagnostic", unit_of_measurement="%")
-        self.__setup_sensor(client, "outside_pressure", "mdi:cloud", available_topic, entity_category="diagnostic", unit_of_measurement="hPa")
+        self.__setup_sensor(client, "outside_pressure", "mdi:cloud", available_topic, entity_category="diagnostic", unit_of_measurement="mmHg")
         
         # numbers
         self.__setup_number(client, "brightness", 0.0, 1.0, 0.1, "mdi:brightness-6", available_topic)

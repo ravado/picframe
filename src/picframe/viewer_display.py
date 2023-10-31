@@ -454,7 +454,7 @@ class ViewerDisplay:
         outside_humidity = outside_sensors.get('humidity', '-');
         outside_pressure = inside_sensors.get('pressure', '-');
 
-        current_sensors_values_formatted = f"{inside_temperature}° • {inside_humidity}% • {inside_pressure} hPa"
+        current_sensors_values_formatted = f"{inside_temperature}° • {inside_humidity}% • {inside_pressure} mmHg"
         current_sensors_values_outside_formatted = f"{outside_temperature}° • {outside_humidity}%"
 
         # Rebuild only if changed
