@@ -496,11 +496,16 @@ class ViewerDisplay:
             # Position of sensors texts
             # 
             
+            use_icons = False
+            if (inside_available and outside_available):
+                use_icons = True
+
             y = (self.__display.height - self.__sensors_text_sz - 20) // 2
             total_width = 0
 
             # inside icon
-            total_width = self.__position_sprite(sensor_inside_icon, y, total_width, width)
+            if (use_icons):
+                total_width = self.__position_sprite(sensor_inside_icon, y, total_width, width)
 
             # inside value
             total_width = self.__position_sprite(sensor_inside_value, y, total_width, width)
@@ -513,7 +518,8 @@ class ViewerDisplay:
             padding = 20
 
             # outside icon
-            total_width = self.__position_sprite(sensor_outside_icon, y, total_width, width, padding)
+            if (use_icons):
+                total_width = self.__position_sprite(sensor_outside_icon, y, total_width, width, padding)
 
             # outside value
             total_width = self.__position_sprite(sensor_outside_value, y, total_width, width, padding)
@@ -521,12 +527,17 @@ class ViewerDisplay:
             if (inside_available):
                 self.__logger.debug(f"Inside sensors available")
 
-                self.__sensors_overlays.append(sensor_inside_icon)
+                if (use_icons):
+                    self.__sensors_overlays.append(sensor_inside_icon)
+
                 self.__sensors_overlays.append(sensor_inside_value)
 
             if (outside_available):
                 self.__logger.debug(f"Outside sensors available")
-                self.__sensors_overlays.append(sensor_outside_icon)
+                
+                if (use_icons):
+                    self.__sensors_overlays.append(sensor_outside_icon)
+                    
                 self.__sensors_overlays.append(sensor_outside_value)
             
             # self.__logger.warning(f"Display Width: {self.__display.width}, Display Height: {self.__display.height}")
