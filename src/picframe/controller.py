@@ -5,6 +5,7 @@ import time
 import signal
 import sys
 import ssl
+import threading
 
 
 def make_date(txt):
@@ -57,7 +58,7 @@ class Controller:
         self.__location_filter = ""
         self.__where_clauses = {}
         self.__sort_clause = "exif_datetime ASC"
-        self.publish_state = lambda x, y: None
+        self.publish_state = lambda x=None, y=None: None
         self.keep_looping = True
         self.__location_filter = ''
         self.__tags_filter = ''
@@ -339,15 +340,10 @@ class Controller:
         from picframe.interface_peripherals import InterfacePeripherals
         self.__interface_peripherals = InterfacePeripherals(self.__model, self.__viewer, self)
 
-        # start mqtt
+        # start mqtt in a separate thread
         if self.__mqtt_config['use_mqtt']:
-            from picframe import interface_mqtt
-            try:
-                self.__interface_mqtt = interface_mqtt.InterfaceMQTT(self, self.__mqtt_config)
-                self.__interface_mqtt.start()
-            except Exception:
-                self.__logger.error("Can't initialize mqtt. Stopping picframe")
-                sys.exit(1)
+            self.__mqtt_thread = threading.Thread(target=self.connect_mqtt)
+            self.__mqtt_thread.start()
 
         # start http server
         if self.__http_config['use_http']:
@@ -368,6 +364,33 @@ class Controller:
         # subscibe to sensors updates
         self.__viewer.get_sensors_data().subscribe_to_sensors_updates(self.handle_temperature_update)
 
+    def connect_mqtt(self):
+        from picframe import interface_mqtt
+        max_retries = 10
+        initial_retry_delay = 60  # Initial delay in seconds (1 minute)
+        max_retry_delay = 1200   # Maximum delay in seconds (20 minutes)
+        retry_delay = initial_retry_delay
+
+        for attempt in range(max_retries):
+            if not self.keep_looping:
+                self.__logger.info("MQTT connection thread is stopping as requested.")
+                break
+
+            try:
+                self.__interface_mqtt = interface_mqtt.InterfaceMQTT(self, self.__mqtt_config)
+                self.__interface_mqtt.start()
+                self.__logger.info("MQTT connected successfully.")
+                break
+            except Exception as e:
+                self.__logger.error(f"Attempt {attempt + 1}/{max_retries}: Can't initialize mqtt - {e}")
+                if attempt < max_retries - 1 and self.keep_looping:
+                    self.__logger.info(f"Retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                    retry_delay = min(retry_delay * 2, max_retry_delay)  # Exponential increase in delay
+            else:
+                self.__logger.error("Max retries reached or stop requested. MQTT not connected.")
+                break
+
     def get_sensors_data(self):
         return self.__viewer.get_sensors_data()
     
@@ -386,6 +409,7 @@ class Controller:
         self.keep_looping = False
         self.__interface_peripherals.stop()
         if self.__interface_mqtt:
+            self.__mqtt_thread.join()
             self.__interface_mqtt.stop()
         if self.__interface_http:
             self.__interface_http.stop()
