@@ -94,7 +94,7 @@ class InterfaceMQTT:
         
         # numbers
         self.__setup_number(client, "brightness", 0.0, 1.0, 0.1, "mdi:brightness-6", available_topic)
-        self.__setup_number(client, "time_delay", 1, 400, 1, "mdi:image-plus", available_topic)
+        self.__setup_number(client, "time_delay", 1, 3600, 1, "mdi:image-plus", available_topic)
         self.__setup_number(client, "fade_time", 1, 50, 1, "mdi:image-size-select-large", available_topic)
         self.__setup_number(client, "matting_images", 0.0, 1.0, 0.01, "mdi:image-frame", available_topic)
 
