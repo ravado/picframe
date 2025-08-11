@@ -4,6 +4,7 @@ import time
 import logging
 import threading
 from picframe import get_image_meta
+from picframe.video_streamer import VIDEO_EXTENSIONS, get_video_info
 
 
 class ImageCache:
@@ -22,7 +23,7 @@ class ImageCache:
                      'IPTC Caption/Abstract': 'caption',
                      'IPTC Object Name': 'title'}
 
-    def __init__(self, picture_dir, follow_links, db_file, geo_reverse, portrait_pairs=False):
+    def __init__(self, picture_dir, follow_links, db_file, geo_reverse, update_interval, portrait_pairs=False):
         # TODO these class methods will crash if Model attempts to instantiate this using a
         # different version from the latest one - should this argument be taken out?
         self.__modified_folders = []
@@ -34,6 +35,7 @@ class ImageCache:
         self.__follow_links = follow_links
         self.__db_file = db_file
         self.__geo_reverse = geo_reverse
+        self.__update_interval = update_interval
         self.__portrait_pairs = portrait_pairs  # TODO have a function to turn this on and off?
         self.__db = self.__create_open_db(self.__db_file)
         self.__db_write_lock = threading.Lock()  # lock to serialize db writes between threads
@@ -52,7 +54,7 @@ class ImageCache:
         while self.__keep_looping:
             if not self.__pause_looping:
                 self.update_cache()
-                time.sleep(2.0)
+                time.sleep(self.__update_interval)
             time.sleep(0.01)
         self.__db_write_lock.acquire()
         self.__db.commit()  # close after update_cache finished for last time
@@ -356,8 +358,9 @@ class ImageCache:
         out_of_date_folders = []
         sql_select = "SELECT * FROM folder WHERE name = ?"
         for dir in [d[0] for d in os.walk(self.__picture_dir, followlinks=self.__follow_links)]:
-            if os.path.basename(dir)[0] == '.':
-                continue  # ignore hidden folders
+            if os.path.basename(dir):
+                if os.path.basename(dir)[0] == '.':
+                    continue  # ignore hidden folders
             mod_tm = int(os.stat(dir).st_mtime)
             found = self.__db.execute(sql_select, (dir,)).fetchone()
             if not found or found['last_modified'] < mod_tm or found['missing'] == 1:
@@ -377,7 +380,7 @@ class ImageCache:
         for dir, _date in modified_folders:
             for file in os.listdir(dir):
                 base, extension = os.path.splitext(file)
-                if (extension.lower() in ImageCache.EXTENSIONS
+                if (extension.lower() in (ImageCache.EXTENSIONS + VIDEO_EXTENSIONS)
                         # have to filter out all the Apple junk
                         and '.AppleDouble' not in dir and not file.startswith('.')):
                     full_file = os.path.join(dir, file)
@@ -399,7 +402,12 @@ class ImageCache:
         base, extension = os.path.splitext(file_only)
 
         # Get the file's meta info and build the INSERT statement dynamically
-        meta = self.__get_exif_info(file)
+        meta = {}
+        ext = os.path.splitext(file)[1].lower()
+        if ext in VIDEO_EXTENSIONS: # no exif info available
+            meta = self.__get_video_info(file)
+        else:
+            meta = self.__get_exif_info(file)
         meta_insert = self.__get_meta_sql_from_dict(meta)
         vals = list(meta.values())
         vals.insert(0, file)
@@ -412,7 +420,10 @@ class ImageCache:
             self.__db.execute(file_insert, (dir, base, extension.lstrip("."), mod_tm))
         else:
             self.__db.execute(file_update, (dir, base, extension.lstrip("."), mod_tm, file_id))
-        self.__db.execute(meta_insert, vals)
+        try:
+            self.__db.execute(meta_insert, vals)
+        except:
+            self.__logger.error(f"###FAILED meta_insert = {meta_insert}, vals = {vals}")
         self.__db_write_lock.release()
 
     def __update_folder_info(self, folder_collection):
@@ -469,7 +480,7 @@ class ImageCache:
 
         e['orientation'] = exifs.get_orientation()
 
-        width, height = exifs.get_size()
+        width, height = exifs.size
         ext = os.path.splitext(file_path_name)[1].lower()
         if ext not in ('.heif', '.heic') and e['orientation'] in (5, 6, 7, 8):
             width, height = height, width  # swap values
@@ -512,7 +523,60 @@ class ImageCache:
 
         return e
 
+    def __get_video_info(self, file_path_name: str) -> dict:
+        """
+        Extracts metadata information from a video file.
+
+        This method retrieves video metadata using the `get_video_info` function and 
+        organizes it into a dictionary. The metadata includes dimensions, orientation, 
+        and other optional EXIF and IPTC data if available.
+
+        Args:
+            file_path_name (str): The full path to the video file.
+
+        Returns:
+            dict: A dictionary containing the meta keys.
+            Note, the 'key' must match a field in the 'meta' table
+        """
+        meta = get_video_info(file_path_name)
+
+        # Dict to store interesting EXIF data
+        # Note, the 'key' must match a field in the 'meta' table
+        e: dict = {}
+
+        # Orientation is set to 1 by default, as video files rarely have this info.
+        e['orientation'] = 1
+
+        width, height = meta.dimensions
+        e['width'] = width
+        e['height'] = height
+
+        # Attempt to retrieve additional metadata if available in meta
+        e['f_number'] = getattr(meta, 'f_number', None)
+        e['make'] = getattr(meta, 'make', None)
+        e['model'] = getattr(meta, 'model', None)
+        e['exposure_time'] = getattr(meta, 'exposure_time', None)
+        e['iso'] = getattr(meta, 'iso', None)
+        e['focal_length'] = getattr(meta, 'focal_length', None)
+        e['rating'] = getattr(meta, 'rating', None)
+        e['lens'] = getattr(meta, 'lens', None)
+        e['exif_datetime'] = meta.exif_datetime if not None else os.path.getmtime(file_path_name)
+
+        if meta.gps_coords is not None:
+            lat, lon = meta.gps_coords
+        else:
+            lat, lon = None, None
+        e['latitude'] = round(lat, 4) if lat is not None else lat  # TODO sqlite requires (None,) to insert NULL
+        e['longitude'] = round(lon, 4) if lon is not None else lon
+
+        # IPTC
+        e['tags'] = getattr(meta, 'tags', None)
+        e['title'] = getattr(meta, 'title', None)
+        e['caption'] = getattr(meta, 'caption', None)
+
+        return e
+
 
 # If being executed (instead of imported), kick it off...
 if __name__ == "__main__":
-    cache = ImageCache(picture_dir='/home/pi/Pictures', follow_links=False, db_file='/home/pi/db.db3', geo_reverse=None)
+    cache = ImageCache(picture_dir='/home/pi/Pictures', follow_links=False, db_file='/home/pi/db.db3', geo_reverse=None, update_interval=2)
