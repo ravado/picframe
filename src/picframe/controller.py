@@ -54,13 +54,10 @@ class Controller:
         self.__next_tm = 0
         self.__date_from = make_date('1901/12/15')  # TODO This seems to be the minimum date to be handled by date functions  # noqa: E501
         self.__date_to = make_date('2038/1/1')
-        self.__location_filter = ""
         self.__where_clauses = {}
         self.__sort_clause = "exif_datetime ASC"
         self.publish_state = lambda x, y: None
         self.keep_looping = True
-        self.__location_filter = ''
-        self.__tags_filter = ''
         self.__interface_peripherals = None
         self.__interface_mqtt = None
         self.__interface_http = None
@@ -76,26 +73,37 @@ class Controller:
     @paused.setter
     def paused(self, val: bool):
         self.__paused = val
+        if self.__viewer.is_video_playing():
+            self.__viewer.pause_video(val)
         pic = self.__model.get_current_pics()[0]  # only refresh left text
         self.__viewer.reset_name_tm(pic, val, side=0, pair=self.__model.get_current_pics()[1] is not None)
         if self.__mqtt_config['use_mqtt']:
             self.publish_state()
 
     def next(self):
-        self.__next_tm = 0
+        if self.__viewer.is_video_playing():
+            self.__viewer.stop_video()
+        else:
+            self.__next_tm = 0
+            self.__force_navigate = True
         self.__viewer.reset_name_tm()
-        self.__force_navigate = True
-
+        
     def back(self):
+        if self.__viewer.is_video_playing():
+            self.__viewer.stop_video()
+        else:
+            self.__next_tm = 0
+            self.__force_navigate = True
         self.__model.set_next_file_to_previous_file()
-        self.__next_tm = 0
         self.__viewer.reset_name_tm()
-        self.__force_navigate = True
 
     def delete(self):
+        if self.__viewer.is_video_playing():
+            self.__viewer.stop_video()
+        else:
+            self.__next_tm = 0
         self.__model.delete_file()
         self.next()  # TODO check needed to avoid skipping one as record has been deleted from model.__file_list
-        self.__next_tm = 0
 
     def set_show_text(self, txt_key=None, val="ON"):
         if val is True:  # allow to be called with boolean from httpserver
@@ -121,7 +129,10 @@ class Controller:
     def subdirectory(self, dir):
         self.__model.subdirectory = dir
         self.__model.force_reload()
-        self.__next_tm = 0
+        if self.__viewer.is_video_playing():
+            self.__viewer.stop_video()
+        else:
+            self.__next_tm = 0
 
     @property
     def date_from(self):
@@ -139,7 +150,10 @@ class Controller:
             # remove from where_clause
             self.__model.set_where_clause('date_from')
         self.__model.force_reload()
-        self.__next_tm = 0
+        if self.__viewer.is_video_playing():
+            self.__viewer.stop_video()
+        else:
+            self.__next_tm = 0
 
     @property
     def date_to(self):
@@ -156,7 +170,10 @@ class Controller:
         else:
             self.__model.set_where_clause('date_to')  # remove from where_clause
         self.__model.force_reload()
-        self.__next_tm = 0
+        if self.__viewer.is_video_playing():
+            self.__viewer.stop_video()
+        else:
+            self.__next_tm = 0
 
     @property
     def display_is_on(self):
@@ -185,7 +202,10 @@ class Controller:
     def shuffle(self, val: bool):
         self.__model.shuffle = val
         self.__model.force_reload()
-        self.__next_tm = 0
+        if self.__viewer.is_video_playing():
+            self.__viewer.stop_video()
+        else:
+            self.__next_tm = 0
         if self.__mqtt_config['use_mqtt']:
             self.publish_state()
 
@@ -196,7 +216,10 @@ class Controller:
     @fade_time.setter
     def fade_time(self, time):
         self.__model.fade_time = float(time)
-        self.__next_tm = 0
+        if self.__viewer.is_video_playing():
+            self.__viewer.stop_video()
+        else:
+            self.__next_tm = 0
 
     @property
     def time_delay(self):
@@ -209,7 +232,10 @@ class Controller:
         if time < 5.0:
             time = 5.0
         self.__model.time_delay = time
-        self.__next_tm = 0
+        if self.__viewer.is_video_playing():
+            self.__viewer.stop_video()
+        else:
+            self.__next_tm = 0
 
     @property
     def brightness(self):
@@ -228,59 +254,34 @@ class Controller:
     @matting_images.setter
     def matting_images(self, val):
         self.__viewer.set_matting_images(float(val))
-        self.__next_tm = 0
+        if self.__viewer.is_video_playing():
+            self.__viewer.stop_video()
+        else:
+            self.__next_tm = 0
 
     @property
     def location_filter(self):
-        return self.__location_filter
+        return self.__model.location_filter
 
     @location_filter.setter
     def location_filter(self, val):
-        self.__location_filter = val
-        if len(val) > 0:
-            self.__model.set_where_clause("location_filter", self.__build_filter(val, "location"))
+        self.__model.location_filter = val
+        if self.__viewer.is_video_playing():
+            self.__viewer.stop_video()
         else:
-            self.__model.set_where_clause("location_filter")  # remove from where_clause
-        self.__model.force_reload()
-        self.__next_tm = 0
+            self.__next_tm = 0
 
     @property
     def tags_filter(self):
-        return self.__tags_filter
+        return self.__model.tags_filter
 
     @tags_filter.setter
     def tags_filter(self, val):
-        self.__tags_filter = val
-        if len(val) > 0:
-            self.__model.set_where_clause("tags_filter", self.__build_filter(val, "tags"))
+        self.__model.tags_filter = val
+        if self.__viewer.is_video_playing():
+            self.__viewer.stop_video()
         else:
-            self.__model.set_where_clause("tags_filter")  # remove from where_clause
-        self.__model.force_reload()
-        self.__next_tm = 0
-
-    def __build_filter(self, val, field):
-        if val.count("(") != val.count(")"):
-            return None  # this should clear the filter and not raise an error
-        val = val.replace(";", "").replace("'", "").replace("%", "").replace('"', '')  # SQL scrambling
-        tokens = ("(", ")", "AND", "OR", "NOT")  # now copes with NOT
-        val_split = val.replace("(", " ( ").replace(")", " ) ").split()  # so brackets not joined to words
-        filter = []
-        last_token = ""
-        for s in val_split:
-            s_upper = s.upper()
-            if s_upper in tokens:
-                if s_upper in ("AND", "OR"):
-                    if last_token in ("AND", "OR"):
-                        return None  # must have a non-token between
-                    last_token = s_upper
-                filter.append(s)
-            else:
-                if last_token is not None:
-                    filter.append("{} LIKE '%{}%'".format(field, s))
-                else:
-                    filter[-1] = filter[-1].replace("%'", " {}%'".format(s))
-                last_token = None
-        return "({})".format(" ".join(filter))  # if OR outside brackets will modify the logic of rest of where clauses
+            self.__next_tm = 0
 
     def text_is_on(self, txt_key):
         return self.__viewer.text_is_on(txt_key)
@@ -300,6 +301,7 @@ class Controller:
         # catch ctrl-c
         signal.signal(signal.SIGINT, self.__signal_handler)
 
+        video_extended = False
         while self.keep_looping:
             time_delay = self.__model.time_delay
             fade_time = self.__model.fade_time
@@ -327,11 +329,14 @@ class Controller:
                     if self.__mqtt_config['use_mqtt']:
                         self.publish_state(pics[0].fname, image_attr)
             self.__model.pause_looping = self.__viewer.is_in_transition()
-            (loop_running, skip_image) = self.__viewer.slideshow_is_running(pics, time_delay, fade_time, self.__paused)
+            (loop_running, skip_image, video_playing) = self.__viewer.slideshow_is_running(pics, time_delay, fade_time, self.__paused)
             if not loop_running:
                 break
-            if skip_image:
+            if skip_image or (video_extended and not video_playing):
                 self.__next_tm = 0
+                video_extended = False
+            if video_playing:
+                video_extended = True
             self.__interface_peripherals.check_input()
 
     def start(self):
@@ -344,20 +349,24 @@ class Controller:
             from picframe import interface_mqtt
             try:
                 self.__interface_mqtt = interface_mqtt.InterfaceMQTT(self, self.__mqtt_config)
-                self.__interface_mqtt.start()
-            except Exception:
-                self.__logger.error("Can't initialize mqtt. Stopping picframe")
-                sys.exit(1)
+            except Exception as e:
+                self.__logger.error("Can't initialize MQTT: %s. Continuing without MQTT.", e)
+                self.__interface_mqtt = None
 
         # start http server
         if self.__http_config['use_http']:
             from picframe import interface_http
             model_config = self.__model.get_model_config()
-            self.__interface_http = interface_http.InterfaceHttp(self,
-                                                                 self.__http_config['path'],
-                                                                 model_config['pic_dir'],
-                                                                 model_config['no_files_img'],
-                                                                 self.__http_config['port'])  # TODO: Implement TLS
+            self.__interface_http = interface_http.InterfaceHttp(
+                                                                    self,
+                                                                    self.__http_config['path'],
+                                                                    model_config['pic_dir'],
+                                                                    model_config['no_files_img'],
+                                                                    self.__http_config['port'],
+                                                                    self.__http_config['auth'],
+                                                                    self.__http_config['username'],
+                                                                    self.__http_config['password'],
+                                                                )  # TODO: Implement TLS
             if self.__http_config['use_ssl']:
                 self.__interface_http.socket = ssl.wrap_socket(
                                                 self.__interface_http.socket,
