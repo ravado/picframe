@@ -338,9 +338,9 @@ class InterfaceMQTT:
         else:
             config_dict["state_topic"] = sensor_topic_head + "/state"
         if entity_category:
-            dict["entity_category"] = entity_category
+            config_dict["entity_category"] = entity_category
         if unit_of_measurement:
-            dict["unit_of_measurement"] = unit_of_measurement
+            config_dict["unit_of_measurement"] = unit_of_measurement
 
         config_payload = json.dumps(config_dict)
         client.publish(config_topic, config_payload, qos=0, retain=True)
