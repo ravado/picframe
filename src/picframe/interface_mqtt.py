@@ -297,9 +297,6 @@ class InterfaceMQTT:
             dev["cu"] = self.__device_url
         return dev
 
-    # TODO: [ivan] merge with yours -> 
-	# def __setup_sensor(self, client, topic, icon, available_topic, has_attributes=False, entity_category=None, unit_of_measurement=None):
-
     def __setup_sensor(
         self,
         client: mqtt.Client,
@@ -307,7 +304,8 @@ class InterfaceMQTT:
         icon: str,
         available_topic: str,
         has_attributes: bool = False,
-        entity_category: Optional[str] = None
+        entity_category: Optional[str] = None,
+        unit_of_measurement: Optional[str] = None
     ) -> None:
         """
         Set up a sensor in Home Assistant.
