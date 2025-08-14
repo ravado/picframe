@@ -1,12 +1,11 @@
 import time
 import threading
-import Adafruit_DHT
+from picframe import dht_compat as Adafruit_DHT  # ⬅️ replaces: import Adafruit_DHT
 import board
 import busio
 import json
 import hashlib
-import adafruit_bme280
-from adafruit_bme280 import basic as adafruit_bme280
+from adafruit_bme280 import basic as adafruit_bme280  # ⬅️ keep one BME280 import
 
 class SensorData:
     def __init__(self, update_rate_in_seconds):
