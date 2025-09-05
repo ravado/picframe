@@ -9,9 +9,9 @@ class GpioController:
         self.__logger = logging.getLogger("gpio_actions.GpioController")
         self.__logger.setLevel(logging.DEBUG)
 
-        self.__prev_touch_sensor_pin = 20 # GPIO for previous button
-        self.__next_touch_sensor_pin = 21 # GPIO for next button
-        self.__clap_sensor_pin = 4 # GPIO for clapper
+        self.__prev_touch_sensor_pin = 20  # GPIO for previous button
+        self.__next_touch_sensor_pin = 21  # GPIO for next button
+        self.__clap_sensor_pin = 4        # GPIO for clapper
 
         # Variables to keep track of claps
         self.__clap_count = 0
@@ -79,9 +79,8 @@ class GpioController:
         self.__clap_count = 0
 
     def __init_touch_buttons(self):
-        
-        # Set up GPIO
-        GPIO.cleanup()
+        # Clean up only the pins we use
+        GPIO.cleanup([self.__prev_touch_sensor_pin, self.__next_touch_sensor_pin])
         GPIO.setmode(GPIO.BCM)
 
         GPIO.setup(self.__prev_touch_sensor_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
@@ -91,17 +90,15 @@ class GpioController:
         GPIO.add_event_detect(self.__next_touch_sensor_pin, GPIO.FALLING, callback=self.next_photo, bouncetime=200)
     
     def __init_clapper(self):
-        
-        # Set up GPIO
-        GPIO.cleanup()
+        # Clean up only the clap pin
+        GPIO.cleanup([self.__clap_sensor_pin])
         GPIO.setmode(GPIO.BCM)
 
         GPIO.setup(self.__clap_sensor_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-
-        # Add an event listener to detect claps
-        GPIO.add_event_detect(self.__clap_sensor_pin, GPIO.FALLING, callback=self.clap_detected, bouncetime=100)
+        GPIO.add_event_detect(self.__clap_sensor_pin, GPIO.FALLING,
+                              callback=self.clap_detected, bouncetime=100)
 
     def __del__(self):
-        # Perform the cleanup operations here
+        # Clean up all pins when shutting down
         GPIO.cleanup()
-        self.__logger.debug(f"Pin {self.__prev_touch_sensor_pin} and {self.__next_touch_sensor_pin} cleanup done")
+        self.__logger.debug("GPIO cleanup done for all pins")
