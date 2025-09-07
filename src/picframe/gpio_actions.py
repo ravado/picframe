@@ -1,10 +1,10 @@
 import threading
 import logging
-import RPi.GPIO as GPIO
+import gpiod
 import time
 
-class GpioController:
 
+class GpioController:
     def __init__(self, frame_controller):
         self.__logger = logging.getLogger("gpio_actions.GpioController")
         self.__logger.setLevel(logging.DEBUG)
@@ -20,21 +20,24 @@ class GpioController:
         self.__frame_controller = frame_controller
 
         try:
+            self.__chip = gpiod.Chip("gpiochip0")
+            self.__lines = {}
             # self.__init_touch_buttons()
             self.__init_clapper()
         except Exception as e:
-            self.__logger.warning("⚠️ GPIO init failed, running without GPIO support.")
+            self.__logger.warning("⚠️ gpiod init failed, running without GPIO support.")
             self.__logger.debug("Cause: %s", e)
+            self.__chip = None
 
-    def next_photo(self, channel):
+    def next_photo(self, line):
         self.__logger.info("GPIO: Next photo pressed")
         self.__frame_controller.next()
 
-    def prev_photo(self, channel):
+    def prev_photo(self, line):
         self.__logger.info("GPIO: Previous photo pressed")
         self.__frame_controller.back()
 
-    def clap_detected(self, channel):
+    def clap_detected(self, line):
         print("-- clap")
         if self.__clap_colldown_timer:
             self.__clap_colldown_timer.cancel()
@@ -68,34 +71,46 @@ class GpioController:
 
     def __init_touch_buttons(self):
         try:
-            GPIO.cleanup([self.__prev_touch_sensor_pin, self.__next_touch_sensor_pin])
-            GPIO.setmode(GPIO.BCM)
+            for pin, cb in [
+                (self.__prev_touch_sensor_pin, self.prev_photo),
+                (self.__next_touch_sensor_pin, self.next_photo),
+            ]:
+                line = self.__chip.get_line(pin)
+                line.request(consumer="picframe", type=gpiod.LINE_REQ_EV_FALLING_EDGE)
+                self.__lines[pin] = (line, cb)
 
-            GPIO.setup(self.__prev_touch_sensor_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-            GPIO.setup(self.__next_touch_sensor_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-
-            GPIO.add_event_detect(self.__prev_touch_sensor_pin, GPIO.FALLING, callback=self.prev_photo, bouncetime=200)
-            GPIO.add_event_detect(self.__next_touch_sensor_pin, GPIO.FALLING, callback=self.next_photo, bouncetime=200)
+            threading.Thread(target=self.__event_loop, daemon=True).start()
         except Exception as e:
             self.__logger.warning("⚠️ Failed to init touch buttons, skipping.")
             self.__logger.debug("Cause: %s", e)
 
     def __init_clapper(self):
         try:
-            GPIO.cleanup([self.__clap_sensor_pin])
-            GPIO.setmode(GPIO.BCM)
+            line = self.__chip.get_line(self.__clap_sensor_pin)
+            line.request(consumer="picframe", type=gpiod.LINE_REQ_EV_FALLING_EDGE)
+            self.__lines[self.__clap_sensor_pin] = (line, self.clap_detected)
 
-            GPIO.setup(self.__clap_sensor_pin, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-            GPIO.remove_event_detect(self.__clap_sensor_pin)  # just in case
-            GPIO.add_event_detect(self.__clap_sensor_pin, GPIO.FALLING,
-                                  callback=self.clap_detected, bouncetime=100)
+            threading.Thread(target=self.__event_loop, daemon=True).start()
         except Exception as e:
             self.__logger.warning("⚠️ Failed to init clapper, skipping.")
             self.__logger.debug("Cause: %s", e)
 
+    def __event_loop(self):
+        """Background thread to listen for GPIO events."""
+        while True:
+            for pin, (line, cb) in self.__lines.items():
+                ev = line.event_wait(sec=0.1)
+                if ev:
+                    event = line.event_read()
+                    if event.type == gpiod.LineEvent.FALLING_EDGE:
+                        cb(pin)
+
     def __del__(self):
         try:
-            GPIO.cleanup()
-            self.__logger.debug("GPIO cleanup done")
+            for line, _ in self.__lines.values():
+                line.release()
+            if self.__chip:
+                self.__chip.close()
+            self.__logger.debug("gpiod cleanup done")
         except Exception as e:
-            self.__logger.debug("GPIO cleanup failed: %s", e)
+            self.__logger.debug("gpiod cleanup failed: %s", e)
