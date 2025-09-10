@@ -122,8 +122,8 @@ class ViewerDisplay:
         self.__sensors_text_sz = config['sensors_text_sz']
         self.__sensors_opacity = config['sensors_opacity']
         self.__sensors_update_rate_in_seconds = config['sensors_update_rate_in_seconds']
-        self.__sensors_data = get_sensors_data.SensorData(self.__sensors_update_rate_in_seconds)
-
+        self.__sensors_data = get_sensors_data.SensorData(config)
+        
         ImageFile.LOAD_TRUNCATED_IMAGES = True  # occasional damaged file hangs app
 
     def get_sensors_data(self):

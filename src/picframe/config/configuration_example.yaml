@@ -55,6 +55,8 @@ viewer:
   sensors_text_sz: 20                      # default=120, sensots character size
   sensors_opacity: 1.0                      # default=1.0 (0.0-1.0), alpha value of sensors overlay
   sensors_update_rate_in_seconds: 60      # default=60, time in seconds to update sensors data
+  outside_sensor_pin: 17                  # GPIO pin number where the outside DHT22 sensor (weather) is connected
+  inside_sensor_address: 0x76             # I2C address of the inside BME280 sensor (default 0x76)
 
   menu_text_sz: 40                        # default=40, menu character size
   menu_autohide_tm: 10.0                  # default=10.0, time in seconds to show menu before auto hiding (0 disables auto hiding)
