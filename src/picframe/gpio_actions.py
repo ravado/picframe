@@ -99,8 +99,8 @@ class GpioController:
         """Background thread to listen for GPIO events."""
         while True:
             for pin, (line, cb) in self.__lines.items():
-                ev = line.event_wait(sec=0.1)
-                if ev:
+                # event_wait expects integer timeout in milliseconds
+                if line.event_wait(100):  # 100 ms
                     event = line.event_read()
                     if event.type == gpiod.LineEvent.FALLING_EDGE:
                         cb(pin)
