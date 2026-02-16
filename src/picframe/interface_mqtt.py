@@ -215,14 +215,16 @@ class InterfaceMQTT:
                             available_topic, entity_category="diagnostic")
         self.__setup_sensor(client, "image", "mdi:file-image",
                             available_topic, has_attributes=True, entity_category="diagnostic")
-        
-        self.__setup_sensor(client, "inside_temperature", "mdi:thermometer", available_topic, entity_category="diagnostic", unit_of_measurement="°C")
-        self.__setup_sensor(client, "inside_humidity", "mdi:water-percent", available_topic, entity_category="diagnostic", unit_of_measurement="%")
-        self.__setup_sensor(client, "inside_pressure", "mdi:cloud", available_topic, entity_category="diagnostic", unit_of_measurement="mmHg")
-        self.__setup_sensor(client, "outside_temperature", "mdi:thermometer", available_topic, entity_category="diagnostic", unit_of_measurement="°C")
-        self.__setup_sensor(client, "outside_humidity", "mdi:water-percent", available_topic, entity_category="diagnostic", unit_of_measurement="%")
-        self.__setup_sensor(client, "outside_pressure", "mdi:cloud", available_topic, entity_category="diagnostic", unit_of_measurement="mmHg")
-        
+
+        # Only setup sensor MQTT entities if sensors available
+        if self.__controller.get_sensors_data() is not None:
+            self.__setup_sensor(client, "inside_temperature", "mdi:thermometer", available_topic, entity_category="diagnostic", unit_of_measurement="°C")
+            self.__setup_sensor(client, "inside_humidity", "mdi:water-percent", available_topic, entity_category="diagnostic", unit_of_measurement="%")
+            self.__setup_sensor(client, "inside_pressure", "mdi:cloud", available_topic, entity_category="diagnostic", unit_of_measurement="mmHg")
+            self.__setup_sensor(client, "outside_temperature", "mdi:thermometer", available_topic, entity_category="diagnostic", unit_of_measurement="°C")
+            self.__setup_sensor(client, "outside_humidity", "mdi:water-percent", available_topic, entity_category="diagnostic", unit_of_measurement="%")
+            self.__setup_sensor(client, "outside_pressure", "mdi:cloud", available_topic, entity_category="diagnostic", unit_of_measurement="mmHg")
+
         # numbers
         self.__setup_number(client, "brightness", 0.0, 1.0, 0.1, "mdi:brightness-6", available_topic)
         self.__setup_number(client, "time_delay", 1, 3600, 1, "mdi:image-plus", available_topic)
@@ -796,16 +798,18 @@ class InterfaceMQTT:
         sensor_state_payload["brightness"] = self.__controller.brightness
         # matting_images
         sensor_state_payload["matting_images"] = self.__controller.matting_images
-        
-        # temperature/humidity/pressure sensors
-        inside_sensors = self.__controller.get_inside_sensors_data()
-        outside_sensors = self.__controller.get_outside_sensors_data()
-        sensor_state_payload["inside_temperature"] = inside_sensors.get("temperature", None)
-        sensor_state_payload["inside_humidity"] = inside_sensors.get("humidity", None)
-        sensor_state_payload["inside_pressure"] = inside_sensors.get("pressure", None)
-        sensor_state_payload["outside_temperature"] = outside_sensors.get("temperature", None)
-        sensor_state_payload["outside_humidity"] = outside_sensors.get("humidity", None)
-        sensor_state_payload["outside_pressure"] = outside_sensors.get("pressure", None)
+
+        # Only publish sensor data if sensors available
+        sensors = self.__controller.get_sensors_data()
+        if sensors is not None:
+            inside_sensors = self.__controller.get_inside_sensors_data()
+            outside_sensors = self.__controller.get_outside_sensors_data()
+            sensor_state_payload["inside_temperature"] = inside_sensors.get("temperature", None)
+            sensor_state_payload["inside_humidity"] = inside_sensors.get("humidity", None)
+            sensor_state_payload["inside_pressure"] = inside_sensors.get("pressure", None)
+            sensor_state_payload["outside_temperature"] = outside_sensors.get("temperature", None)
+            sensor_state_payload["outside_humidity"] = outside_sensors.get("humidity", None)
+            sensor_state_payload["outside_pressure"] = outside_sensors.get("pressure", None)
 
         # publish sensors
         dir_list.sort()

@@ -50,13 +50,14 @@ viewer:
   clock_hgt_offset_pct: 3.0               # default=3.0 (1.0-10.0), used to calclate pixels between clock text and top/bottom of screen
                                           # If text is found in the ramdisk /dev/shm/clock.txt then it will be displayed under the time
 
-  show_sensors: True                      # default=False, True shows sensors overlay. False does not show sensors overlay
+  show_sensors: False                     # default=False, True shows sensors overlay. False does not show sensors overlay
   sensors_justify: "L"                      # default="R", clock justification L, C, or R
   sensors_text_sz: 20                      # default=120, sensots character size
   sensors_opacity: 1.0                      # default=1.0 (0.0-1.0), alpha value of sensors overlay
   sensors_update_rate_in_seconds: 60      # default=60, time in seconds to update sensors data
   outside_sensor_pin: 17                  # GPIO pin number where the outside DHT22 sensor (weather) is connected
   inside_sensor_address: 0x76             # I2C address of the inside BME280 sensor (default 0x76)
+  font_icon_file: "~/picframe_data/data/fonts/Font Awesome 6 Free-Solid-900.otf" # Icon font for sensor display
 
   menu_text_sz: 40                        # default=40, menu character size
   menu_autohide_tm: 10.0                  # default=10.0, time in seconds to show menu before auto hiding (0 disables auto hiding)
@@ -154,3 +155,10 @@ peripherals:
       enable: False                       # default=False
       label: "Power down"                 # default="Power down"
       shortcut: "p"                       # default="p"
+
+gpio:
+  use_gpio: False                         # default=False. Set True to enable GPIO controls (clap sensor, touch buttons)
+  clap_sensor_pin: 4                      # default=4, GPIO pin for clap detection sensor
+  prev_touch_sensor_pin: 20               # default=20, GPIO pin for previous photo button
+  next_touch_sensor_pin: 21               # default=21, GPIO pin for next photo button
+  clap_delay: 0.7                         # default=0.7, seconds between claps for multi-clap detection

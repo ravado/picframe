@@ -2,9 +2,6 @@ import time
 import subprocess
 import logging
 import os
-import numpy as np
-from PIL import Image, ImageFilter, ImageFile
-from picframe import mat_image, get_image_meta, get_sensors_data
 from typing import Optional, List, Tuple
 from datetime import datetime
 from PIL import Image, ImageFilter, ImageFile
@@ -122,12 +119,23 @@ class ViewerDisplay:
         self.__sensors_text_sz = config['sensors_text_sz']
         self.__sensors_opacity = config['sensors_opacity']
         self.__sensors_update_rate_in_seconds = config['sensors_update_rate_in_seconds']
-        self.__sensors_data = get_sensors_data.SensorData(config)
-        
+
+        # Only create SensorData if sensors enabled
+        if self.__show_sensors:
+            try:
+                from picframe import get_sensors_data
+                self.__sensors_data = get_sensors_data.SensorData(config)
+            except ImportError as e:
+                self.__logger.warning("Sensor libraries not available, disabling sensors: %s", e)
+                self.__show_sensors = False
+                self.__sensors_data = None
+        else:
+            self.__sensors_data = None
+
         ImageFile.LOAD_TRUNCATED_IMAGES = True  # occasional damaged file hangs app
 
     def get_sensors_data(self):
-        return self.__sensors_data
+        return self.__sensors_data  # Can be None
 
     @property
     def display_is_on(self):
@@ -538,7 +546,7 @@ class ViewerDisplay:
         outside_available = outside_sensors.get('is_online', False);
         outside_temperature = outside_sensors.get('temperature', '-');
         outside_humidity = outside_sensors.get('humidity', '-');
-        outside_pressure = inside_sensors.get('pressure', '-');
+        outside_pressure = outside_sensors.get('pressure', '-');
 
         current_sensors_values_formatted = f"{inside_temperature}° • {inside_humidity}% • {inside_pressure} mmHg"
         current_sensors_values_outside_formatted = f"{outside_temperature}° • {outside_humidity}%"

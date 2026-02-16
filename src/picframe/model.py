@@ -52,6 +52,14 @@ DEFAULT_CONFIG = {
         'clock_top_bottom': "T",
         'clock_wdt_offset_pct': 3.0,
         'clock_hgt_offset_pct': 3.0,
+        'show_sensors': False,
+        'sensors_justify': 'L',
+        'sensors_text_sz': 20,
+        'sensors_opacity': 1.0,
+        'sensors_update_rate_in_seconds': 60,
+        'outside_sensor_pin': 17,
+        'inside_sensor_address': 0x76,
+        'font_icon_file': '~/picframe_data/data/fonts/Font Awesome 6 Free-Solid-900.otf',
         'menu_text_sz': 40,
         'menu_autohide_tm': 10.0,
         'geo_suppress_list': [],
@@ -114,6 +122,13 @@ DEFAULT_CONFIG = {
             'power_down': {'enable': False, 'label': 'Power down', 'shortcut': 'p'}
         },
     },
+    'gpio': {
+        'use_gpio': False,
+        'clap_sensor_pin': 4,
+        'prev_touch_sensor_pin': 20,
+        'next_touch_sensor_pin': 21,
+        'clap_delay': 0.7,
+    },
 }
 
 
@@ -160,7 +175,7 @@ class Model:
         with open(configfile, 'r') as stream:
             try:
                 conf = yaml.safe_load(stream)
-                for section in ['viewer', 'model', 'mqtt', 'http', 'peripherals']:
+                for section in ['viewer', 'model', 'mqtt', 'http', 'peripherals', 'gpio']:
                     self.__config[section] = {**DEFAULT_CONFIG[section], **conf[section]}
 
                 self.__logger.debug('config data = %s', self.__config)
@@ -236,6 +251,9 @@ class Model:
 
     def get_peripherals_config(self):
         return self.__config['peripherals']
+
+    def get_gpio_config(self):
+        return self.__config['gpio']
 
     @property
     def fade_time(self):

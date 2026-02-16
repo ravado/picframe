@@ -99,6 +99,20 @@ Key issues:
 - Icon font not bundled in `src/picframe/data/fonts/` (missing from `picframe -i` flow)
 - Hardware deps not in `pyproject.toml` (should be optional extras)
 
+## Planning & Task Management
+
+**All implementation plans and task documentation should be kept in `.claude/plans/` directory.**
+
+Current plans:
+- `backward-compatibility-plan.md` — Remediation for upstream compatibility gaps
+- `memories-feature.md` — Feature implementation plan
+- `task-001.md` — Specific task documentation
+
+When creating new plans or tasks, add them to this folder with descriptive names following the pattern:
+- Feature plans: `feature-name-plan.md`
+- Task tracking: `task-NNN.md` (numbered sequentially)
+- Architecture decisions: `adr-NNN-topic.md`
+
 ## Development
 
 - **Remote:** `git@github.com:ravado/picframe.git`

@@ -5,7 +5,7 @@ import locale
 import sys
 from shutil import copytree
 
-from picframe import model, viewer_display, controller, gpio_actions, __version__
+from picframe import model, viewer_display, controller, __version__
 
 PICFRAME_DATA_DIR = 'picframe_data'
 
@@ -133,8 +133,19 @@ def main():
 
     v = viewer_display.ViewerDisplay(m.get_viewer_config())
     c = controller.Controller(m, v)
-    gpio_controller = gpio_actions.GpioController(c)
-    
+
+    # Only initialize GPIO if enabled in config
+    gpio_config = m.get_gpio_config()
+    if gpio_config.get('use_gpio', False):
+        try:
+            from picframe import gpio_actions
+            gpio_controller = gpio_actions.GpioController(c, gpio_config)
+            logger.info("GPIO controller initialized")
+        except ImportError as e:
+            logger.warning("GPIO unavailable (gpiod not installed): %s", e)
+        except Exception as e:
+            logger.warning("GPIO initialization failed: %s", e)
+
     c.start()
     c.loop()
     c.stop()
