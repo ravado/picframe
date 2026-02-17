@@ -3,10 +3,6 @@ import threading
 import logging
 import json
 import hashlib
-import board
-import busio
-from picframe import dht_compat as Adafruit_DHT
-from adafruit_bme280 import basic as adafruit_bme280
 
 logger = logging.getLogger("sensors")
 
@@ -64,25 +60,31 @@ class SensorData:
         if not self.show_sensors:
             return self._default_sensor_data()
         try:
+            import board
+            import busio
+            from adafruit_bme280 import basic as adafruit_bme280
+
             i2c = busio.I2C(board.SCL, board.SDA)
             bme280 = adafruit_bme280.Adafruit_BME280_I2C(
                 i2c, address=self.inside_sensor_address
             )
             return self.format_sensor_data(bme280.temperature, bme280.humidity, bme280.pressure)
         except Exception as e:
-            logger.debug("BME280 not available: %s", e)
+            logger.debug("BME280 sensor unavailable: %s", e)
             return self._default_sensor_data()
     
     def get_outside_sensor_data(self):
         if not self.show_sensors:
             return self._default_sensor_data()
         try:
+            from picframe import dht_compat as Adafruit_DHT
+
             humidity, temperature = Adafruit_DHT.read_retry(
                 Adafruit_DHT.DHT22, self.outside_sensor_pin
             )
             return self.format_sensor_data(temperature, humidity)
         except Exception as e:
-            logger.debug("DHT22 not available: %s", e)
+            logger.debug("DHT22 sensor unavailable: %s", e)
             return self._default_sensor_data()
 
     def format_sensor_data(self, temperature, humidity, pressure=None):

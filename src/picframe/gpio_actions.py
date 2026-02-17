@@ -1,33 +1,37 @@
 import threading
 import logging
-import gpiod
 import time
 
 
 class GpioController:
-    def __init__(self, frame_controller):
+    def __init__(self, frame_controller, config=None):
         self.__logger = logging.getLogger("gpio_actions.GpioController")
         self.__logger.setLevel(logging.DEBUG)
 
-        self.__prev_touch_sensor_pin = 20  # GPIO for previous button
-        self.__next_touch_sensor_pin = 21  # GPIO for next button
-        self.__clap_sensor_pin = 4        # GPIO for clapper
+        # Get pin config with fallback defaults
+        if config is None:
+            config = {}
+        self.__prev_touch_sensor_pin = config.get('prev_touch_sensor_pin', 20)
+        self.__next_touch_sensor_pin = config.get('next_touch_sensor_pin', 21)
+        self.__clap_sensor_pin = config.get('clap_sensor_pin', 4)
 
         self.__clap_count = 0
         self.__clap_colldown_timer = None
-        self.__clap_delay = 0.7  # seconds
+        self.__clap_delay = config.get('clap_delay', 0.7)
 
         self.__frame_controller = frame_controller
 
         try:
+            import gpiod
+            self.__gpiod = gpiod  # Store gpiod module for use in other methods
             self.__chip = gpiod.Chip("gpiochip0")
             self.__lines = {}
             # self.__init_touch_buttons()
             self.__init_clapper()
         except Exception as e:
-            self.__logger.warning("⚠️ gpiod init failed, running without GPIO support.")
-            self.__logger.debug("Cause: %s", e)
+            self.__logger.warning("⚠️ GPIO unavailable: %s", e)
             self.__chip = None
+            self.__gpiod = None
 
     def next_photo(self, line):
         self.__logger.info("GPIO: Next photo pressed")
@@ -76,7 +80,7 @@ class GpioController:
                 (self.__next_touch_sensor_pin, self.next_photo),
             ]:
                 line = self.__chip.get_line(pin)
-                line.request(consumer="picframe", type=gpiod.LINE_REQ_EV_FALLING_EDGE)
+                line.request(consumer="picframe", type=self.__gpiod.LINE_REQ_EV_FALLING_EDGE)
                 self.__lines[pin] = (line, cb)
 
             threading.Thread(target=self.__event_loop, daemon=True).start()
@@ -87,7 +91,7 @@ class GpioController:
     def __init_clapper(self):
         try:
             line = self.__chip.get_line(self.__clap_sensor_pin)
-            line.request(consumer="picframe", type=gpiod.LINE_REQ_EV_FALLING_EDGE)
+            line.request(consumer="picframe", type=self.__gpiod.LINE_REQ_EV_FALLING_EDGE)
             self.__lines[self.__clap_sensor_pin] = (line, self.clap_detected)
 
             threading.Thread(target=self.__event_loop, daemon=True).start()
@@ -102,7 +106,7 @@ class GpioController:
                 # event_wait expects integer timeout in milliseconds
                 if line.event_wait(100):  # 100 ms
                     event = line.event_read()
-                    if event.type == gpiod.LineEvent.FALLING_EDGE:
+                    if event.type == self.__gpiod.LineEvent.FALLING_EDGE:
                         cb(pin)
 
     def __del__(self):
