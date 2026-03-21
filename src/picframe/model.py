@@ -63,6 +63,10 @@ DEFAULT_CONFIG = {
         'menu_text_sz': 40,
         'menu_autohide_tm': 10.0,
         'geo_suppress_list': [],
+        'show_progress_bar': False,
+        'progress_bar_height': 8,
+        'progress_bar_color': [255, 255, 255, 200],
+        'progress_bar_position': 'B',
     },
     'model': {
 

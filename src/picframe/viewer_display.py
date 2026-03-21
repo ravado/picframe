@@ -132,6 +132,15 @@ class ViewerDisplay:
         else:
             self.__sensors_data = None
 
+        # [ivan] progress bar configs
+        self.__show_progress_bar = config['show_progress_bar']
+        self.__progress_bar_height = config['progress_bar_height']
+        self.__progress_bar_color = config['progress_bar_color']
+        self.__progress_bar_position = config['progress_bar_position']
+        self.__progress_bar_tex = None
+        self.__progress_bar_fill = None
+        self.__prev_progress = -1.0
+
         ImageFile.LOAD_TRUNCATED_IMAGES = True  # occasional damaged file hangs app
 
     def get_sensors_data(self):
@@ -532,6 +541,38 @@ class ViewerDisplay:
             self.__image_overlay.draw()
 
 
+    # [ivan] Creates a solid-color sprite for the progress bar
+    def __make_solid_bar(self, w, h, x):
+        if self.__progress_bar_tex is None:
+            r, g, b, a = self.__progress_bar_color
+            tex_arr = np.zeros((1, 1, 4), dtype=np.uint8)
+            tex_arr[0, 0] = [r, g, b, a]
+            self.__progress_bar_tex = pi3d.Texture(tex_arr, blend=True, mipmap=False, free_after_load=True)
+        bar_y = (self.__display.height - h) // 2
+        if self.__progress_bar_position == "B":
+            bar_y *= -1
+        sprite = pi3d.Sprite(w=w, h=h, x=x, y=bar_y, z=3.9)
+        sprite.set_draw_details(self.__flat_shader, [self.__progress_bar_tex])
+        return sprite
+
+    # [ivan] Draws the progress bar showing time remaining for current photo
+    def __draw_progress_bar(self, time_delay):
+        if self.__next_tm == 0.0:
+            return
+        tm = time.time()
+        progress = max(0.0, min(1.0, 1.0 - (self.__next_tm - tm) / time_delay)) if time_delay > 0 else 0.0
+        quantized = round(progress * 200) / 200.0  # 0.5% steps to avoid VBO rebuild every frame
+
+        if quantized != self.__prev_progress:
+            bar_w = max(1, int(self.__display.width * quantized))
+            x = bar_w // 2 - self.__display.width // 2
+            self.__progress_bar_fill = self.__make_solid_bar(
+                w=bar_w, h=self.__progress_bar_height, x=x)
+            self.__prev_progress = quantized
+
+        if self.__progress_bar_fill:
+            self.__progress_bar_fill.draw()
+
     # Draws the temperature and humidity info
     def __draw_sensors(self):
 
@@ -883,6 +924,8 @@ class ViewerDisplay:
 
         self.__slide.draw()
         self.__draw_overlay()
+        if self.__show_progress_bar:
+            self.__draw_progress_bar(time_delay)
         if self.clock_is_on:
             self.__draw_clock()
 
