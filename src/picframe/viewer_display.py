@@ -139,7 +139,6 @@ class ViewerDisplay:
         self.__progress_bar_position = config['progress_bar_position']
         self.__progress_bar_tex = None
         self.__progress_bar_fill = None
-        self.__prev_progress = -1.0
 
         ImageFile.LOAD_TRUNCATED_IMAGES = True  # occasional damaged file hangs app
 
@@ -541,17 +540,18 @@ class ViewerDisplay:
             self.__image_overlay.draw()
 
 
-    # [ivan] Creates a solid-color sprite for the progress bar
-    def __make_solid_bar(self, w, h, x):
+    # [ivan] Creates a solid-color sprite for the progress bar (created once at full display width)
+    def __make_solid_bar(self):
         if self.__progress_bar_tex is None:
             r, g, b, a = self.__progress_bar_color
             tex_arr = np.zeros((1, 1, 4), dtype=np.uint8)
             tex_arr[0, 0] = [r, g, b, a]
             self.__progress_bar_tex = pi3d.Texture(tex_arr, blend=True, mipmap=False, free_after_load=True)
+        h = self.__progress_bar_height
         bar_y = (self.__display.height - h) // 2
         if self.__progress_bar_position == "B":
             bar_y *= -1
-        sprite = pi3d.Sprite(w=w, h=h, x=x, y=bar_y, z=3.9)
+        sprite = pi3d.Sprite(w=self.__display.width, h=h, x=0, y=bar_y, z=3.9)
         sprite.set_draw_details(self.__flat_shader, [self.__progress_bar_tex])
         return sprite
 
@@ -560,18 +560,17 @@ class ViewerDisplay:
         if self.__next_tm == 0.0:
             return
         tm = time.time()
-        progress = max(0.0, min(1.0, 1.0 - (self.__next_tm - tm) / time_delay)) if time_delay > 0 else 0.0
-        quantized = round(progress * 200) / 200.0  # 0.5% steps to avoid VBO rebuild every frame
+        progress = max(0.001, min(1.0, 1.0 - (self.__next_tm - tm) / time_delay)) if time_delay > 0 else 0.001
 
-        if quantized != self.__prev_progress:
-            bar_w = max(1, int(self.__display.width * quantized))
-            x = bar_w // 2 - self.__display.width // 2
-            self.__progress_bar_fill = self.__make_solid_bar(
-                w=bar_w, h=self.__progress_bar_height, x=x)
-            self.__prev_progress = quantized
+        if self.__progress_bar_fill is None:
+            self.__progress_bar_fill = self.__make_solid_bar()
 
-        if self.__progress_bar_fill:
-            self.__progress_bar_fill.draw()
+        # Update scale and position via transform only — no geometry/VBO rebuild, perfectly smooth
+        W = self.__display.width
+        self.__progress_bar_fill.scl[0] = progress
+        self.__progress_bar_fill.MFlg = True
+        self.__progress_bar_fill.positionX(-W * (1.0 - progress) / 2.0)
+        self.__progress_bar_fill.draw()
 
     # Draws the temperature and humidity info
     def __draw_sensors(self):
