@@ -566,10 +566,10 @@ class ViewerDisplay:
             self.__progress_bar_fill = self.__make_solid_bar()
 
         # Update scale and position via transform only — no geometry/VBO rebuild, perfectly smooth
+        # unif[6] is the x-scale uniform (pi3d Sprite passes w= as sx to Shape.__init__)
         W = self.__display.width
-        self.__progress_bar_fill.scl[0] = progress
-        self.__progress_bar_fill.MFlg = True
-        self.__progress_bar_fill.positionX(-W * (1.0 - progress) / 2.0)
+        self.__progress_bar_fill.unif[6] = W * progress
+        self.__progress_bar_fill.positionX(-W * (1.0 - progress) / 2.0)  # pin left edge to screen left
         self.__progress_bar_fill.draw()
 
     # Draws the temperature and humidity info
