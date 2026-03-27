@@ -1,66 +1,6 @@
-const TYPES = {"bool": 5, "text": 15, "date": 10, "number": 5, "action": 5};
-
-const GROUPS = {
-    "nav":     {label: "Navigation",    danger: false},
-    "display": {label: "Display",       danger: false},
-    "text":    {label: "Text Overlays", danger: false},
-    "filter":  {label: "Filters",       danger: false},
-    "actions": {label: "Actions",       danger: true},
-};
-
-
 async function getData() {
     const response = await fetch("/?all");
     return response.json();
-}
-
-
-function createSpans() {
-    const grouped = {};
-    Object.entries(ids).forEach(([id, el]) => {
-        const g = el.group || "other";
-        if (!grouped[g]) grouped[g] = [];
-        grouped[g].push([id, el]);
-    });
-
-    let html = "";
-    Object.entries(GROUPS).forEach(([groupKey, groupInfo]) => {
-        const items = grouped[groupKey];
-        if (!items || items.length === 0) return;
-
-        html += `<div class="card${groupInfo.danger ? " card--danger" : ""}">`;
-        html += `<div class="card-title">${groupInfo.label}</div>`;
-        html += `<div class="card-body">`;
-
-        items.forEach(([id, el]) => {
-            const label = (el.desc !== undefined) ? el.desc : id.replace(/_/g, " ");
-
-            if (el.type === "bool" || el.type === "action") {
-                const btnClass = el.type === "action"
-                    ? (groupInfo.danger ? "pf-btn pf-btn--danger" : "pf-btn pf-btn--action")
-                    : "pf-btn pf-btn--off";
-                html += `<button class="${btnClass}" data-resting="${btnClass}" id="${id}" onclick="toggle('${id}')">${label}</button>`;
-            } else {
-                const widthAttr = el.type === "text" ? "" : ` style="width:${TYPES[el.type]}ch"`;
-                html += `<div class="pf-field${el.type === "text" ? " pf-field--wide" : ""}">`;
-                html += `<label for="${id}">${label}</label>`;
-                html += `<input id="${id}"${widthAttr}>`;
-                html += `</div>`;
-            }
-        });
-
-        html += `</div></div>`;
-    });
-
-    const container = document.getElementById("controls");
-    container.innerHTML = html;
-
-    container.addEventListener("keyup", e => {
-        if (e.key === "Enter") {
-            e.preventDefault();
-            uploadValues();
-        }
-    });
 }
 
 
@@ -156,6 +96,12 @@ function toggle(id) {
 }
 
 
-// Initialise
-createSpans();
+// Format initial values (dates, floats) and start polling
+refreshPage();
 repeatRefresh();
+document.getElementById("controls").addEventListener("keyup", e => {
+    if (e.key === "Enter") {
+        e.preventDefault();
+        uploadValues();
+    }
+});

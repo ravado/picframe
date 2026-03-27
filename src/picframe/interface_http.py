@@ -17,6 +17,8 @@ except ImportError:
     from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer  # py2
     import urlparse
 
+from jinja2 import Environment, FileSystemLoader
+
 try:
     from pi_heif import register_heif_opener
 except ImportError:
@@ -86,6 +88,42 @@ def heif_to_image(fname: str) -> Optional[Image.Image]:
         logger = logging.getLogger("interface_http.heif_to_jpg")
         logger.warning("Failed attempt to convert %s due to %s \n** Have you installed pi_heif? **", fname, e)
         return None
+
+CONTROL_GROUPS = [
+    {"key": "nav", "label": "Navigation", "danger": False, "controls": [
+        {"id": "back",   "type": "action", "fn": "back={}",  "val": False},
+        {"id": "next",   "type": "action", "fn": "next={}",  "val": False},
+        {"id": "paused", "type": "bool",   "fn": "setter",   "val": False},
+    ]},
+    {"key": "display", "label": "Display", "danger": False, "controls": [
+        {"id": "display_is_on", "type": "bool",   "fn": "setter", "val": False},
+        {"id": "shuffle",       "type": "bool",   "fn": "setter", "val": False},
+        {"id": "brightness",    "type": "number", "fn": "setter", "val": 0},
+        {"id": "fade_time",     "type": "number", "fn": "setter", "val": 0},
+        {"id": "time_delay",    "type": "number", "fn": "setter", "val": 0},
+    ]},
+    {"key": "text", "label": "Text Overlays", "danger": False, "controls": [
+        {"id": "text_name",         "type": "bool",   "fn": 'set_show_text={"txt_key":"name","val":$val}',     "val": False},
+        {"id": "text_date",         "type": "bool",   "fn": 'set_show_text={"txt_key":"date","val":$val}',     "val": False},
+        {"id": "text_folder",       "type": "bool",   "fn": 'set_show_text={"txt_key":"folder","val":$val}',   "val": False},
+        {"id": "text_location",     "type": "bool",   "fn": 'set_show_text={"txt_key":"location","val":$val}', "val": False},
+        {"id": "clear_text",        "type": "action", "fn": "set_show_text={}",                                 "val": False},
+        {"id": "refresh_show_text", "type": "action", "fn": "refresh_show_text={}",                             "val": False},
+    ]},
+    {"key": "filter", "label": "Filters", "danger": False, "controls": [
+        {"id": "date_from",       "type": "date", "fn": "setter", "val": 0},
+        {"id": "date_to",         "type": "date", "fn": "setter", "val": 0},
+        {"id": "subdirectory",    "type": "text", "fn": "setter", "val": ""},
+        {"id": "location_filter", "type": "text", "fn": "setter", "val": ""},
+        {"id": "tags_filter",     "type": "text", "fn": "setter", "val": ""},
+    ]},
+    {"key": "actions", "label": "Actions", "danger": True, "controls": [
+        {"id": "delete",      "type": "action", "fn": "delete={}",      "val": False},
+        {"id": "purge_files", "type": "action", "fn": "purge_files={}", "val": False},
+        {"id": "stop",        "type": "action", "fn": "stop={}",        "val": False},
+    ]},
+]
+
 
 class RequestHandler(BaseHTTPRequestHandler):
 
@@ -158,7 +196,16 @@ class RequestHandler(BaseHTTPRequestHandler):
                     content_type = EXTENSION_TO_MIMETYPE.get(extension, "text/html")
                     is_bytes = False
                 page = urlparse.unquote(page)
-                if (not is_bytes and os.path.isfile(page)) or is_bytes:
+                if html_page == "index.html":
+                    rendered = self.server._render_index()
+                    self.send_response(200)
+                    self.send_header('Content-type', 'text/html')
+                    self.send_header('Content-Length', str(len(rendered)))
+                    self.end_headers()
+                    self.wfile.write(rendered)
+                    self.connection.close()
+                    page_ok = True
+                elif (not is_bytes and os.path.isfile(page)) or is_bytes:
                     self.send_response(200)
                     self.send_header('Content-type', content_type)
                     file_size = os.path.getsize(page)
@@ -272,8 +319,26 @@ class InterfaceHttp(HTTPServer):
         controller_class = controller.__class__
         self._setters = [method for method in dir(controller_class)
                          if 'setter' in dir(getattr(controller_class, method))]
+        self._jinja_env = Environment(loader=FileSystemLoader(self._html_path))
         t = threading.Thread(target=self.serve_forever)
         t.start()
+
+    def _render_index(self):
+        state = {key: getattr(self._controller, key) for key in self._setters}
+        groups = []
+        ids_js = {}
+        for group in CONTROL_GROUPS:
+            controls = []
+            for ctrl in group["controls"]:
+                c = dict(ctrl)
+                c["val"] = state.get(ctrl["id"], ctrl["val"])
+                controls.append(c)
+                ids_js[ctrl["id"]] = {"type": ctrl["type"], "fn": ctrl["fn"], "val": c["val"]}
+            groups.append({**group, "controls": controls})
+        return self._jinja_env.get_template("index.html").render(
+            groups=groups,
+            ids_json=json.dumps(ids_js),
+        ).encode("utf-8")
 
     def stop(self):
         t = threading.Thread(target=self.shutdown, daemon=True)
