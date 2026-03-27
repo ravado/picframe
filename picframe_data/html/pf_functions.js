@@ -1,3 +1,13 @@
+const TYPES = {"bool": 5, "text": 15, "date": 10, "number": 5, "action": 5};
+
+const GROUPS = {
+    "nav":     {label: "Navigation",    danger: false},
+    "display": {label: "Display",       danger: false},
+    "text":    {label: "Text Overlays", danger: false},
+    "filter":  {label: "Filters",       danger: false},
+    "actions": {label: "Actions",       danger: true},
+};
+
 
 async function getData() {
     const response = await fetch("/?all");
@@ -6,27 +16,48 @@ async function getData() {
 
 
 function createSpans() {
-    let span_div_html = "";
-    /* ids is defined in index.html */
-    Object.entries(ids).forEach(([element_id, element]) => {
-        let description = element_id.replace("_", " ");
-        if (element.desc !== undefined) {
-            description = element.desc;
-        }
-        if (element.type === "bool" || element.type === "action") {
-            span_div_html += `<span class="pf_span off" id=${element_id} onclick="toggle('${element_id}')">${description}</span>`
-        } else {
-            width = TYPES[element.type][0];
-            span_div_html += `<span class="pf_span">${description} <input id="${element_id}"  style="width: ${width}ch;"></span>`;
-        }
+    const grouped = {};
+    Object.entries(ids).forEach(([id, el]) => {
+        const g = el.group || "other";
+        if (!grouped[g]) grouped[g] = [];
+        grouped[g].push([id, el]);
     });
-    span_div = document.getElementById("spans");
-    span_div.innerHTML = span_div_html;
 
-    // make enter press upload button
-    span_div.addEventListener("keyup", event => {
-        if (event.keyCode === 13) { // enter key
-            event.preventDefault();
+    let html = "";
+    Object.entries(GROUPS).forEach(([groupKey, groupInfo]) => {
+        const items = grouped[groupKey];
+        if (!items || items.length === 0) return;
+
+        html += `<div class="card${groupInfo.danger ? " card--danger" : ""}">`;
+        html += `<div class="card-title">${groupInfo.label}</div>`;
+        html += `<div class="card-body">`;
+
+        items.forEach(([id, el]) => {
+            const label = (el.desc !== undefined) ? el.desc : id.replace(/_/g, " ");
+
+            if (el.type === "bool" || el.type === "action") {
+                const btnClass = el.type === "action"
+                    ? (groupInfo.danger ? "pf-btn pf-btn--danger" : "pf-btn pf-btn--action")
+                    : "pf-btn pf-btn--off";
+                html += `<button class="${btnClass}" data-resting="${btnClass}" id="${id}" onclick="toggle('${id}')">${label}</button>`;
+            } else {
+                const widthAttr = el.type === "text" ? "" : ` style="width:${TYPES[el.type]}ch"`;
+                html += `<div class="pf-field${el.type === "text" ? " pf-field--wide" : ""}">`;
+                html += `<label for="${id}">${label}</label>`;
+                html += `<input id="${id}"${widthAttr}>`;
+                html += `</div>`;
+            }
+        });
+
+        html += `</div></div>`;
+    });
+
+    const container = document.getElementById("controls");
+    container.innerHTML = html;
+
+    container.addEventListener("keyup", e => {
+        if (e.key === "Enter") {
+            e.preventDefault();
             uploadValues();
         }
     });
@@ -34,137 +65,97 @@ function createSpans() {
 
 
 function isNumeric(num) {
-    return (typeof(num) === 'number' || typeof(num) === "string" && num.trim() !== '') && !isNaN(num);
+    return (typeof num === "number" || (typeof num === "string" && num.trim() !== "")) && !isNaN(num);
 }
 
 
 function refreshPage() {
-    Object.entries(ids).forEach(([element_id, element]) => { //ids declared previous to this script in each page
-        let docElement = document.getElementById(element_id);
-        let value = element.val;
+    Object.entries(ids).forEach(([id, el]) => {
+        const elem = document.getElementById(id);
+        if (!elem) return;
+        let value = el.val;
+
         if (isNumeric(value)) {
             value = parseFloat(value);
-            if (element.type === "number") { // integer or float
-                if (Math.floor(value) !== value) { //float
-                    value = value.toFixed(2);
-                }
-            } else if (element.type === "date") {
-                date = new Date(value * 1000); // js uses ms
-                value = `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`;
+            if (el.type === "number") {
+                if (Math.floor(value) !== value) value = value.toFixed(2);
+            } else if (el.type === "date") {
+                const d = new Date(value * 1000);
+                value = `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
             }
-        } else if (element.type === "bool") {
-            if (value == true || value === "true" || value === "True" || value === "ON") {
-                value = "true";
-            } else {
-                value = "false";
-            }
+        } else if (el.type === "bool") {
+            value = (value === true || value === "true" || value === "True" || value === "ON");
         }
-        docElement.value = value; //TODO have some fields not changed by ids.val?
-        element.val = value; // reset to refreshed version TODO check this is necessary?
-        if (element.type === "bool") {
-            docElement.className = (element.val ? "pf_span on" : "pf_span off");
+
+        elem.value = value;
+        el.val = value;
+
+        if (el.type === "bool") {
+            elem.className = el.val ? "pf-btn pf-btn--on" : "pf-btn pf-btn--off";
         }
     });
 }
 
 
 function refreshData() {
-    getData().then(ret_val => {
-        let data_changed = false;
-        Object.entries(ret_val).forEach(([key, val]) => {
+    getData().then(data => {
+        let changed = false;
+        Object.entries(data).forEach(([key, val]) => {
             if (key in ids && ids[key].val != val) {
-                data_changed = true;
+                changed = true;
                 ids[key].val = val;
             }
         });
-        if (data_changed) {
-            refreshPage();
-        }
-    });
+        if (changed) refreshPage();
+    }).catch(() => {});
 }
 
 
 function repeatRefresh() {
     refreshData();
-    setTimeout(repeatRefresh, 120000); //refresh every 120s in never-ending loop - faster occasionally changes values while being edited!
+    setTimeout(repeatRefresh, 120000);
 }
 
 
 function uploadValues() {
-    let data_changed = false;
-    Object.entries(ids).forEach(([element_id, element]) => { //ids declared previous to this script in each page
-        if (element.fn === "setter" && element.type !== "bool") { // done by toggle function.
-            let docElement = document.getElementById(element_id);
-            if (docElement.value != element.val) {
-                console.log("updating:" + element_id + "->" + docElement.value + ":was:" + element.val + ":");
-                element.val = docElement.value;
-                fetch(`/?${element_id}=${docElement.value}`).then(() => data_changed = true); //TODO do we need to refresh?
+    const fetches = [];
+    Object.entries(ids).forEach(([id, el]) => {
+        if (el.fn === "setter" && el.type !== "bool") {
+            const elem = document.getElementById(id);
+            if (!elem) return;
+            if (elem.value != el.val) {
+                el.val = elem.value;
+                fetches.push(fetch(`/?${id}=${elem.value}`));
             }
         }
     });
-    if (data_changed) { //TODO - is this necessary in ids.val changed here?
-        refreshData();
+    if (fetches.length > 0) {
+        Promise.all(fetches).then(() => refreshData());
     }
 }
 
 
 function toggle(id) {
-    let element = ids[id];
-    if (element.type === "bool") { //toggle val and class
-        element.val = !(element.val);
+    const el = ids[id];
+    if (el.type === "bool") {
+        el.val = !el.val;
     }
-    let cmd = `/?${id}=${element.val}`
-    if (element.fn !== "setter") { // i.e. use fn
-        cmd = `/?${element.fn}`;
-        cmd = cmd.replace('$val', element.val);
+
+    let cmd = `/?${id}=${el.val}`;
+    if (el.fn !== "setter") {
+        cmd = `/?${el.fn}`.replace("$val", el.val);
     }
-    let docElement = document.getElementById(id);
-    let css = (element.val ? "pf_span on" : "pf_span off"); // return to this
-    docElement.className = "pf_span flash";
-    console.log(cmd);
-    fetch(cmd).then(() => afterFlash(docElement, css));
+
+    const elem = document.getElementById(id);
+    const restingClass = el.type === "bool"
+        ? (el.val ? "pf-btn pf-btn--on" : "pf-btn pf-btn--off")
+        : (elem.dataset.resting || "pf-btn pf-btn--action");
+
+    elem.className = "pf-btn pf-btn--flash";
+    fetch(cmd).then(() => { elem.className = restingClass; });
 }
 
 
-function afterFlash(element, css) {
-    element.className = css; //TODO slight time delay?
-}
-
-
-// the super slimmed down python server doesn't load style sheets from file so this is
-// done using javascript!
-function setStyle() {
-    var x = document.createElement("STYLE");
-    var t = document.createTextNode("body {\
-        background-color: black;\
-        color:rgb(94, 89, 79);\
-        font-family: 'Lucida Sans', 'Lucida Sans Regular', 'Lucida Grande', 'Lucida Sans Unicode', Geneva, Verdana, sans-serif;\
-    }\
-    button {\
-        margin: 5px;\
-        padding: 10px;\
-        border: none;\
-        border-radius: 8px;\
-        font-weight: bold;\
-    }\
-    .off {\
-        background-color: maroon;\
-        color:powderblue;\
-    }\
-    .on {\
-        background-color: olivedrab;\
-        color:rebeccapurple;\
-    }\
-    .flash {\
-        background-color: orange;\
-        color:powderblue;\
-    }\
-    .pf_span {\
-        margin: 2px;\
-        padding: 4px;\
-        border-style: solid;\
-        display: inline-block;\
-    }");
-    x.appendChild(t);
-    document.head.appendChild(x);
-}
+// Initialise
+createSpans();
+repeatRefresh();

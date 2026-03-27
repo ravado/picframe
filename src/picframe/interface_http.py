@@ -36,7 +36,12 @@ EXTENSION_TO_MIMETYPE = {
     # Images
     '.jpg': 'image/jpeg',
     '.jpeg': 'image/jpeg',
-    '.png': 'image/png'
+    '.png': 'image/png',
+
+    # Static UI files
+    '.html': 'text/html',
+    '.js': 'application/javascript',
+    '.css': 'text/css',
 }
 if register_heif_opener is not None:
     EXTENSIONS += [".heif", ".heic"]
@@ -150,7 +155,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                         is_bytes = False
                 else:
                     page = os.path.join(self.server._html_path, html_page)
-                    content_type = "text/html"
+                    content_type = EXTENSION_TO_MIMETYPE.get(extension, "text/html")
                     is_bytes = False
                 page = urlparse.unquote(page)
                 if (not is_bytes and os.path.isfile(page)) or is_bytes:

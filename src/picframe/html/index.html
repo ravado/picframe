@@ -1,54 +1,62 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
-    <meta name="viewport" content="width=device-width, inital-scale=1"/>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>PicFrame</title>
+    <link rel="stylesheet" href="style.css"/>
 </head>
-    <body onload="setStyle(); createSpans(); refreshData();">
-        <script type="text/javascript">
-            /* widths to use for spans. Other slots in the array could be used for other
-             things...
-            */
-            const TYPES = {"bool":[5,], "text":[15,], "date":[10,], "number":[5,], "action":[5,]};
+<body>
+    <script>
+    const ids = {
+        "back":              {type:"action", fn:"back={}",                                                val:false, group:"nav"},
+        "next":              {type:"action", fn:"next={}",                                                val:false, group:"nav"},
+        "paused":            {type:"bool",   fn:"setter",                                                 val:false, group:"nav"},
 
-            /* this is used to render the ids on this page.
-             fn is a method of controller
-             underscores will be replaced by spaces but it's also possible to use
-             an alternative "desc":"..." field
-            */
-            const ids = {
-                "back": {type:"action", fn:"back={}", val:false},
-                "next": {type:"action", fn:"next={}", val:false},
-                "paused": {type:"bool", fn:"setter", val:false},
-                "display_is_on": {type:"bool", fn:"setter", val:false},
-                "shuffle": {type:"bool", fn:"setter", val:false},
-                "text_name": {type:"bool", fn:"set_show_text={\"txt_key\":\"name\",\"val\":$val}", val:false},
-                "text_date": {type:"bool", fn:"set_show_text={\"txt_key\":\"date\",\"val\":$val}", val:false},
-                "text_folder": {type:"bool", fn:"set_show_text={\"txt_key\":\"folder\",\"val\":$val}", val:false},
-                "text_location": {type:"bool", fn:"set_show_text={\"txt_key\":\"location\",\"val\":$val}", val:false},
-                "clear_text": {type:"action", fn:"set_show_text={}", val:false},
-                "refresh_show_text": {type:"action", fn:"refresh_show_text={}", val:false},
+        "display_is_on":     {type:"bool",   fn:"setter",                                                 val:false, group:"display"},
+        "shuffle":           {type:"bool",   fn:"setter",                                                 val:false, group:"display"},
+        "brightness":        {type:"number", fn:"setter",                                                 val:0,     group:"display"},
+        "fade_time":         {type:"number", fn:"setter",                                                 val:0,     group:"display"},
+        "time_delay":        {type:"number", fn:"setter",                                                 val:0,     group:"display"},
 
-                "date_from": {type:"date", fn:"setter", val:0},
-                "date_to": {type:"date", fn:"setter", val:0},
-                "fade_time": {type:"number", fn:"setter", val:0},
-                "time_delay": {type:"number", fn:"setter", val:0},
-                "brightness": {type:"number", fn:"setter", val:0},
-                "subdirectory": {type:"text", fn:"setter", val:""},
-                "location_filter": {type:"text", fn:"setter", val:""},
-                "tags_filter": {type:"text", fn:"setter", val:""},
-                "delete": {type:"action", fn:"delete={}", val:false},
-                "purge_files": {type:"action", fn:"purge_files={}", val:false},
-                "stop": {type:"action", fn:"stop={}", val:false},
-                };
-        </script>
-        <script type="text/javascript" src="pf_functions.js"></script>
-        <h1>Simple Picture Frame page</h1>
-        <div id="spans">
+        "text_name":         {type:"bool",   fn:"set_show_text={\"txt_key\":\"name\",\"val\":$val}",     val:false, group:"text"},
+        "text_date":         {type:"bool",   fn:"set_show_text={\"txt_key\":\"date\",\"val\":$val}",     val:false, group:"text"},
+        "text_folder":       {type:"bool",   fn:"set_show_text={\"txt_key\":\"folder\",\"val\":$val}",   val:false, group:"text"},
+        "text_location":     {type:"bool",   fn:"set_show_text={\"txt_key\":\"location\",\"val\":$val}", val:false, group:"text"},
+        "clear_text":        {type:"action", fn:"set_show_text={}",                                       val:false, group:"text"},
+        "refresh_show_text": {type:"action", fn:"refresh_show_text={}",                                   val:false, group:"text"},
+
+        "date_from":         {type:"date",   fn:"setter",                                                 val:0,     group:"filter"},
+        "date_to":           {type:"date",   fn:"setter",                                                 val:0,     group:"filter"},
+        "subdirectory":      {type:"text",   fn:"setter",                                                 val:"",    group:"filter"},
+        "location_filter":   {type:"text",   fn:"setter",                                                 val:"",    group:"filter"},
+        "tags_filter":       {type:"text",   fn:"setter",                                                 val:"",    group:"filter"},
+
+        "delete":            {type:"action", fn:"delete={}",                                              val:false, group:"actions"},
+        "purge_files":       {type:"action", fn:"purge_files={}",                                         val:false, group:"actions"},
+        "stop":              {type:"action", fn:"stop={}",                                                val:false, group:"actions"},
+    };
+    </script>
+
+    <header>
+        <h1>PicFrame</h1>
+    </header>
+
+    <main>
+        <section class="preview-section">
+            <a href="/current_image">
+                <img id="preview-img" src="/current_image" alt="Current image" onerror="this.style.visibility='hidden'"/>
+            </a>
+            <a href="/current_image_original" class="original-link">original</a>
+        </section>
+
+        <div id="controls"></div>
+
+        <div class="update-row">
+            <button id="upload_button" onclick="uploadValues()">Apply Changes</button>
         </div>
-        <button id="upload_button" onclick="uploadValues()">UPDATE</button>
-        <a href="/current_image">See the current image</a>
-        or <a href="/current_image_original">its unmodified original</a>
-        (use browser BACK to return to this page)
-    </body>
+    </main>
+
+    <script src="pf_functions.js"></script>
+</body>
 </html>
