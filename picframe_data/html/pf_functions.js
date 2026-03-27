@@ -31,7 +31,26 @@ function refreshPage() {
         el.val = value;
 
         if (el.type === "bool") {
-            elem.className = el.val ? "pf-btn pf-btn--on" : "pf-btn pf-btn--off";
+            elem.className = elem.className.replace(/pf-btn--on|pf-btn--off/g, "")
+                + (el.val ? " pf-btn--on" : " pf-btn--off");
+            elem.className = elem.className.replace(/\s+/g, " ").trim();
+
+            // Update power label if it's display_is_on
+            if (id === "display_is_on") {
+                const label = elem.querySelector(".power-label");
+                if (label) label.textContent = el.val ? "ON" : "OFF";
+            }
+
+            // Update pause button text
+            if (id === "paused") {
+                elem.innerHTML = el.val ? "&#9646;&#9646; Paused" : "&#9654; Playing";
+            }
+        }
+
+        // Sync brightness slider
+        const slider = document.getElementById(id + "_slider");
+        if (slider) {
+            slider.value = value;
         }
     });
 }
@@ -87,12 +106,30 @@ function toggle(id) {
     }
 
     const elem = document.getElementById(id);
-    const restingClass = el.type === "bool"
-        ? (el.val ? "pf-btn pf-btn--on" : "pf-btn pf-btn--off")
-        : (elem.dataset.resting || "pf-btn pf-btn--action");
+    const restingClass = elem.dataset.resting || elem.className;
 
-    elem.className = "pf-btn pf-btn--flash";
-    fetch(cmd).then(() => { elem.className = restingClass; });
+    // Flash
+    const origClasses = elem.className;
+    elem.className = origClasses.replace(/pf-btn--\w+/g, "") + " pf-btn--flash";
+    elem.className = elem.className.replace(/\s+/g, " ").trim();
+
+    fetch(cmd).then(() => {
+        if (el.type === "bool") {
+            const onOff = el.val ? "pf-btn--on" : "pf-btn--off";
+            elem.className = origClasses.replace(/pf-btn--on|pf-btn--off/g, onOff);
+            elem.className = elem.className.replace(/\s+/g, " ").trim();
+
+            if (id === "display_is_on") {
+                const label = elem.querySelector(".power-label");
+                if (label) label.textContent = el.val ? "ON" : "OFF";
+            }
+            if (id === "paused") {
+                elem.innerHTML = el.val ? "&#9646;&#9646; Paused" : "&#9654; Playing";
+            }
+        } else {
+            elem.className = restingClass;
+        }
+    });
 }
 
 
