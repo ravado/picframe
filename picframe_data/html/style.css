@@ -14,7 +14,7 @@
     --btn-action-text: #c8c4bc;
     --border: #2c2c2e;
     --radius: 12px;
-    --gap: 12px;
+    --gap: 20px;
     --input-bg: #111;
 }
 
@@ -39,7 +39,7 @@ a {
 }
 
 header {
-    padding: 14px 16px 12px;
+    padding: 14px 24px 12px;
     border-bottom: 1px solid var(--border);
 }
 
@@ -51,11 +51,17 @@ header h1 {
 }
 
 main {
-    max-width: 600px;
+    max-width: 1200px;
     margin: 0 auto;
-    padding: 14px 16px;
+    padding: 20px 24px;
     display: flex;
     flex-direction: column;
+    gap: var(--gap);
+}
+
+#controls {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
     gap: var(--gap);
 }
 
@@ -67,6 +73,7 @@ main {
     overflow: hidden;
     background: #000;
     aspect-ratio: 4 / 3;
+    max-height: 520px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -245,10 +252,13 @@ main {
 
 /* ── Responsive ── */
 
-@media (max-width: 380px) {
+@media (max-width: 500px) {
     main {
-        padding: 10px 12px;
-        gap: 10px;
+        padding: 12px;
+        gap: 12px;
+    }
+    #controls {
+        grid-template-columns: 1fr;
     }
     .card {
         padding: 11px 12px;
