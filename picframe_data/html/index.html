@@ -31,24 +31,24 @@
                         <img id="preview-img" src="/current_image" alt="Current image" onerror="this.style.visibility='hidden'"/>
                     </a>
                 </div>
+
+                <!-- Nav overlay on image -->
+                {% for group in groups if group.key == "nav" %}
+                    {% for ctrl in group.controls if ctrl.id == "back" %}
+                        <button class="nav-overlay nav-overlay--left pf-btn pf-btn--action" data-resting="pf-btn pf-btn--action" id="{{ ctrl.id }}" onclick="toggle('{{ ctrl.id }}')" aria-label="Back">&#9665;</button>
+                    {% endfor %}
+                    {% for ctrl in group.controls if ctrl.id == "next" %}
+                        <button class="nav-overlay nav-overlay--right pf-btn pf-btn--action" data-resting="pf-btn pf-btn--action" id="{{ ctrl.id }}" onclick="toggle('{{ ctrl.id }}')" aria-label="Next">&#9655;</button>
+                    {% endfor %}
+                    {% for ctrl in group.controls if ctrl.id == "paused" %}
+                        {% set btn_class = "pf-btn pf-btn--on" if ctrl.val else "pf-btn pf-btn--off" %}
+                        <button class="nav-overlay nav-overlay--pause {{ btn_class }}" data-resting="{{ btn_class }}" id="{{ ctrl.id }}" onclick="toggle('{{ ctrl.id }}')">
+                            {{ "&#9646;&#9646; Paused" if ctrl.val else "&#9654; Playing" }}
+                        </button>
+                    {% endfor %}
+                {% endfor %}
             </div>
             <a href="/current_image_original" class="original-link">original</a>
-
-            <!-- Nav overlay on image -->
-            {% for group in groups if group.key == "nav" %}
-                {% for ctrl in group.controls if ctrl.id == "back" %}
-                    <button class="nav-overlay nav-overlay--left pf-btn pf-btn--action" data-resting="pf-btn pf-btn--action" id="{{ ctrl.id }}" onclick="toggle('{{ ctrl.id }}')" aria-label="Back">&#9665;</button>
-                {% endfor %}
-                {% for ctrl in group.controls if ctrl.id == "next" %}
-                    <button class="nav-overlay nav-overlay--right pf-btn pf-btn--action" data-resting="pf-btn pf-btn--action" id="{{ ctrl.id }}" onclick="toggle('{{ ctrl.id }}')" aria-label="Next">&#9655;</button>
-                {% endfor %}
-                {% for ctrl in group.controls if ctrl.id == "paused" %}
-                    {% set btn_class = "pf-btn pf-btn--on" if ctrl.val else "pf-btn pf-btn--off" %}
-                    <button class="nav-overlay nav-overlay--pause {{ btn_class }}" data-resting="{{ btn_class }}" id="{{ ctrl.id }}" onclick="toggle('{{ ctrl.id }}')">
-                        {{ "&#9646;&#9646; Paused" if ctrl.val else "&#9654; Playing" }}
-                    </button>
-                {% endfor %}
-            {% endfor %}
         </section>
 
         <div id="controls">
