@@ -129,6 +129,16 @@ function toggle(id) {
         } else {
             elem.className = restingClass;
         }
+
+        // Reload preview image after navigation actions
+        if (id === "back" || id === "next") {
+            const img = document.getElementById("preview-img");
+            if (img) {
+                setTimeout(() => {
+                    img.src = "/current_image?t=" + Date.now();
+                }, 500);
+            }
+        }
     });
 }
 
