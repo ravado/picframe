@@ -512,7 +512,9 @@ class Model:
             # Sort least-shown photos first, random within equal counts.
             # This ensures unseen photos always appear before already-shown ones,
             # preventing the same photos from dominating when the frame restarts mid-cycle.
-            sort_list.append("displayed_count ASC, RANDOM()")
+            # displayed_count is on the file table (not exposed in the all_data view),
+            # so use a correlated subquery to reach it.
+            sort_list.append("(SELECT f.displayed_count FROM file f WHERE f.file_id = all_data.file_id) ASC, RANDOM()")
         else:
             if self.__col_names is None:
                 self.__col_names = self.__image_cache.get_column_names()  # do this once
