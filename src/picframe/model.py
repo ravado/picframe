@@ -509,7 +509,10 @@ class Model:
             sort_list.append("last_modified < {:.0f}".format(time.time() - 3600 * 24 * recent_n))
 
         if self.shuffle:
-            sort_list.append("RANDOM()")
+            # Sort least-shown photos first, random within equal counts.
+            # This ensures unseen photos always appear before already-shown ones,
+            # preventing the same photos from dominating when the frame restarts mid-cycle.
+            sort_list.append("displayed_count ASC, RANDOM()")
         else:
             if self.__col_names is None:
                 self.__col_names = self.__image_cache.get_column_names()  # do this once
