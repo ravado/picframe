@@ -328,6 +328,7 @@ class Controller:
                             field_name = self.__model.EXIF_TO_FIELD[key]
                             image_attr[key] = pics[0].__dict__[field_name]  # TODO nicer using namedtuple for Pic
                     if self.__mqtt_config['use_mqtt']:
+                        image_attr['times_shown'] = pics[0].displayed_count + 1
                         self.publish_state(pics[0].fname, image_attr)
             self.__model.pause_looping = self.__viewer.is_in_transition()
             (loop_running, skip_image, video_playing) = self.__viewer.slideshow_is_running(pics, time_delay, fade_time, self.__paused)

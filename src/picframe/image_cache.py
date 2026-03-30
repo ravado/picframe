@@ -40,7 +40,7 @@ class ImageCache:
         self.__db = self.__create_open_db(self.__db_file)
         self.__db_write_lock = threading.Lock()  # lock to serialize db writes between threads
         # NB this is where the required schema is set
-        self.__update_schema(3)
+        self.__update_schema(4)
 
         self.__keep_looping = True
         self.__pause_looping = False
@@ -262,6 +262,7 @@ class ImageCache:
             SELECT
                 folder.name || "/" || file.basename || "." || file.extension AS fname,
                 file.last_modified,
+                file.displayed_count,
                 meta.*,
                 meta.height > meta.width as is_portrait,
                 location.description as location
@@ -343,6 +344,30 @@ class ImageCache:
                 # Add "displayed statistics" fields to the file table (useful for slideshow debugging)
                 self.__db.execute("ALTER TABLE file ADD COLUMN displayed_count INTEGER default 0 NOT NULL")
                 self.__db.execute("ALTER TABLE file ADD COLUMN last_displayed REAL DEFAULT 0 NOT NULL")
+
+            if schema_version <= 3:
+                # Migrate to db schema v4
+                # Expose displayed_count in the all_data view so it reaches the Pic data class and MQTT
+                self.__db.execute("DROP VIEW all_data")
+                self.__db.execute("""
+                    CREATE VIEW IF NOT EXISTS all_data
+                    AS
+                    SELECT
+                        folder.name || "/" || file.basename || "." || file.extension AS fname,
+                        file.last_modified,
+                        file.displayed_count,
+                        meta.*,
+                        meta.height > meta.width as is_portrait,
+                        location.description as location
+                    FROM file
+                        INNER JOIN folder
+                            ON folder.folder_id = file.folder_id
+                        LEFT JOIN meta
+                            ON file.file_id = meta.file_id
+                        LEFT JOIN location
+                            ON location.latitude = meta.latitude AND location.longitude = meta.longitude
+                    WHERE folder.missing = 0
+                """)
 
             # Finally, update the db's schema version stamp to the app's requested version
             self.__db.execute('DELETE FROM db_info')

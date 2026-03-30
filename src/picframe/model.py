@@ -142,7 +142,7 @@ class Pic:  # TODO could this be done more elegantly with namedtuple
                  f_number=0, exposure_time=None, iso=0, focal_length=None,
                  make=None, model=None, lens=None, rating=None, latitude=None,
                  longitude=None, width=0, height=0, is_portrait=0, location=None, title=None,
-                 caption=None, tags=None):
+                 caption=None, tags=None, displayed_count=0):
         self.fname = fname
         self.last_modified = last_modified
         self.file_id = file_id
@@ -165,6 +165,7 @@ class Pic:  # TODO could this be done more elegantly with namedtuple
         self.tags = tags
         self.caption = caption
         self.title = title
+        self.displayed_count = displayed_count
 
 
 class Model:
@@ -512,9 +513,7 @@ class Model:
             # Sort least-shown photos first, random within equal counts.
             # This ensures unseen photos always appear before already-shown ones,
             # preventing the same photos from dominating when the frame restarts mid-cycle.
-            # displayed_count is on the file table (not exposed in the all_data view),
-            # so use a correlated subquery to reach it.
-            sort_list.append("(SELECT f.displayed_count FROM file f WHERE f.file_id = all_data.file_id) ASC, RANDOM()")
+            sort_list.append("displayed_count ASC, RANDOM()")
         else:
             if self.__col_names is None:
                 self.__col_names = self.__image_cache.get_column_names()  # do this once
