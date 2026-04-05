@@ -504,17 +504,17 @@ class Model:
         else:
             where_clause = "1"
 
-        sort_list = []
         recent_n = self.get_model_config()["recent_n"]
+        recent_cutoff = None
         if recent_n > 0:
-            sort_list.append("last_modified < {:.0f}".format(time.time() - 3600 * 24 * recent_n))
+            recent_cutoff = time.time() - 3600 * 24 * recent_n
 
         if self.shuffle:
-            # Sort least-shown photos first, random within equal counts.
-            # This ensures unseen photos always appear before already-shown ones,
-            # preventing the same photos from dominating when the frame restarts mid-cycle.
-            sort_list.append("displayed_count ASC, RANDOM()")
+            self.__file_list = self.__image_cache.query_cache_shuffle(where_clause, recent_cutoff=recent_cutoff)
         else:
+            sort_list = []
+            if recent_cutoff is not None:
+                sort_list.append("last_modified < {:.0f}".format(recent_cutoff))
             if self.__col_names is None:
                 self.__col_names = self.__image_cache.get_column_names()  # do this once
             for col in self.__sort_cols.split(","):
@@ -522,9 +522,8 @@ class Model:
                 if colsplit[0] in self.__col_names and (len(colsplit) == 1 or colsplit[1].upper() in ("ASC", "DESC")):
                     sort_list.append(col)
             sort_list.append("fname ASC")  # always finally sort on this in case nothing else to sort on or sort_cols is "" # noqa: E501
-        sort_clause = ",".join(sort_list)
-
-        self.__file_list = self.__image_cache.query_cache(where_clause, sort_clause)
+            sort_clause = ",".join(sort_list)
+            self.__file_list = self.__image_cache.query_cache(where_clause, sort_clause)
         self.__number_of_files = len(self.__file_list)
         self.__file_index = 0
         self.__num_run_through = 0

@@ -3,8 +3,66 @@ import os
 import time
 import logging
 import threading
+import random
+import math
 from picframe import get_image_meta
 from picframe.video_streamer import VIDEO_EXTENSIONS, get_video_info
+
+SHUFFLE_COUNT_ALPHA = 1.5
+SHUFFLE_AGE_BONUS = 0.3
+
+
+def _row_value(row, key, default=None):
+    return row[key] if row[key] is not None else default
+
+
+def _weighted_shuffle_partition(rows):
+    if not rows:
+        return []
+
+    last_modified_values = [float(_row_value(row, "last_modified", 0.0)) for row in rows]
+    newest = max(last_modified_values)
+    oldest = min(last_modified_values)
+    age_span = newest - oldest
+    weighted_rows = []
+
+    for row in rows:
+        displayed_count = max(0, int(_row_value(row, "displayed_count", 0)))
+        count_weight = 1.0 / math.pow(displayed_count + 1, SHUFFLE_COUNT_ALPHA)
+
+        if age_span > 0:
+            # Normalize age within this partition only. Older photos get a bounded
+            # bonus instead of dominating the selection outright.
+            age_position = (newest - float(_row_value(row, "last_modified", 0.0))) / age_span
+        else:
+            age_position = 0.0
+        age_weight = 1.0 + (SHUFFLE_AGE_BONUS * age_position)
+        total_weight = count_weight * age_weight
+
+        # Draw an exponential race priority so the final sorted order is random,
+        # but rows with higher weights tend to appear earlier in the playlist.
+        priority = -math.log(max(random.random(), 1e-12)) / total_weight
+        weighted_rows.append((priority, row))
+
+    weighted_rows.sort(key=lambda item: item[0])
+    return [row for _, row in weighted_rows]
+
+
+def weighted_shuffle_rows(rows, recent_cutoff=None):
+    if recent_cutoff is None:
+        return _weighted_shuffle_partition(list(rows))
+
+    recent_rows = []
+    older_rows = []
+    for row in rows:
+        if float(_row_value(row, "last_modified", 0.0)) >= recent_cutoff:
+            recent_rows.append(row)
+        else:
+            older_rows.append(row)
+
+    # Preserve the existing "recent first" behavior, but randomize fairly within
+    # each partition instead of hard-sorting by displayed_count.
+    return _weighted_shuffle_partition(recent_rows) + _weighted_shuffle_partition(older_rows)
 
 
 class ImageCache:
@@ -144,6 +202,42 @@ class ImageCache:
                             skip_portrait_slot = True
                         newlist.append(elem)
                 return newlist
+        except Exception:
+            return []
+
+    def query_cache_shuffle(self, where_clause, recent_cutoff=None):
+        cursor = self.__db.cursor()
+        cursor.row_factory = sqlite3.Row
+        try:
+            sql = """SELECT file_id, displayed_count, last_modified, is_portrait
+                FROM all_data WHERE {0}
+                """.format(where_clause)
+            rows = cursor.execute(sql).fetchall()
+            ordered_rows = weighted_shuffle_rows(rows, recent_cutoff=recent_cutoff)
+
+            if not self.__portrait_pairs:
+                return [(row["file_id"],) for row in ordered_rows]
+
+            portrait_rows = [row for row in ordered_rows if row["is_portrait"] == 1]
+            # Reuse the existing portrait-slot layout: the full pass determines
+            # where portrait slots exist, then portraits are consumed in the same weighted order.
+            full_list = [(-1,) if row["is_portrait"] == 1 else (row["file_id"],) for row in ordered_rows]
+            pair_list = [(row["file_id"],) for row in portrait_rows]
+            newlist = []
+            skip_portrait_slot = False
+            for i in range(len(full_list)):
+                if full_list[i][0] != -1:
+                    newlist.append(full_list[i])
+                elif skip_portrait_slot:
+                    skip_portrait_slot = False
+                    continue
+                elif pair_list:
+                    elem = pair_list.pop(0)
+                    if pair_list:
+                        elem += pair_list.pop(0)
+                        skip_portrait_slot = True
+                    newlist.append(elem)
+            return newlist
         except Exception:
             return []
 
