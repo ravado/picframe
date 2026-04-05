@@ -449,6 +449,8 @@ class ViewerDisplay:
             if paused:
                 info_strings.append("PAUSED")
         final_string = " • ".join(info_strings)
+        if final_string:
+            final_string = "[{}] {}".format(pic.displayed_count, final_string)
 
         block = None
         if len(final_string) > 0:
