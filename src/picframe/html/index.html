@@ -51,6 +51,18 @@
             <a href="/current_image_original" class="original-link">original</a>
         </section>
 
+        <section class="card queue-card" id="queue-card">
+            <div class="queue-card__header">
+                <div>
+                    <div class="card-title">Queue</div>
+                    <div class="queue-card__summary" id="queue-summary">Loading queue...</div>
+                </div>
+                <div class="queue-card__meta" id="queue-meta"></div>
+            </div>
+            <div class="queue-card__current" id="queue-current"></div>
+            <div class="queue-list" id="queue-list"></div>
+        </section>
+
         <div id="controls">
             <!-- Display (without display_is_on, which is in header) -->
             {% for group in groups if group.key == "display" %}

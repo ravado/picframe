@@ -298,6 +298,22 @@ class Controller:
         (pic, _) = self.__model.get_current_pics()
         return pic.fname
 
+    def get_queue_snapshot(self, limit=8):
+        return self.__model.get_queue_snapshot(limit=limit)
+
+    def get_queue_thumb_source(self, index):
+        return self.__model.get_queue_thumb_source(index)
+
+    def jump_to_queue_index(self, index):
+        success, reason = self.__model.set_next_file_index(index)
+        if success:
+            if self.__viewer.is_video_playing():
+                self.__viewer.stop_video()
+            self.__next_tm = 0
+            self.__force_navigate = True
+            self.__viewer.reset_name_tm()
+        return {"ok": success, "reason": reason}
+
     def loop(self):  # TODO exit loop gracefully and call image_cache.stop()
         # catch ctrl-c
         signal.signal(signal.SIGINT, self.__signal_handler)

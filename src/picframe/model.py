@@ -3,6 +3,7 @@ import os
 import time
 import logging
 import locale
+import threading
 from picframe import geo_reverse, image_cache
 
 DEFAULT_CONFIGFILE = "~/picframe_data/config/configuration.yaml"
@@ -205,6 +206,7 @@ class Model:
         self.__file_index = 0  # pointer to next position in __file_list
         self.__current_pics = (None, None)  # this hold a tuple of (pic, None) or two pic objects if portrait pairs
         self.__num_run_through = 0
+        self.__file_list_lock = threading.Lock()
 
         model_config = self.get_model_config()  # alias for brevity as used several times below
         try:
@@ -395,7 +397,104 @@ class Model:
         self.__reload_files = True
 
     def set_next_file_to_previous_file(self):
-        self.__file_index = (self.__file_index - 2) % self.__number_of_files  # TODO deleting last image results in ZeroDivisionError # noqa: E501
+        with self.__file_list_lock:
+            self.__file_index = (self.__file_index - 2) % self.__number_of_files  # TODO deleting last image results in ZeroDivisionError # noqa: E501
+
+    def set_next_file_index(self, index):
+        with self.__file_list_lock:
+            if self.__reload_files:
+                return False, "reload_pending"
+            if self.__number_of_files == 0:
+                return False, "empty_queue"
+            try:
+                index = int(index)
+            except (TypeError, ValueError):
+                return False, "invalid_index"
+            if index < 0 or index >= self.__number_of_files:
+                return False, "invalid_index"
+            self.__file_index = index
+        return True, "ok"
+
+    def get_queue_snapshot(self, limit=8):
+        try:
+            limit = max(0, int(limit))
+        except (TypeError, ValueError):
+            limit = 8
+
+        with self.__file_list_lock:
+            queue_slots = list(self.__file_list)
+            next_index = self.__file_index
+            reload_pending = self.__reload_files
+            total_slots = self.__number_of_files
+            current_pics = self.__current_pics
+
+        displayed_index = None
+        if total_slots > 0 and current_pics[0] is not None:
+            displayed_index = (next_index - 1) % total_slots
+
+        upcoming_slots = []
+        if total_slots > 0:
+            for offset in range(min(limit, total_slots)):
+                slot_index = (next_index + offset) % total_slots
+                upcoming_slots.append(self.__build_queue_slot(slot_index, queue_slots[slot_index]))
+
+        current_slot = None
+        if displayed_index is not None:
+            current_slot = self.__build_queue_slot(displayed_index, queue_slots[displayed_index])
+
+        return {
+            "reload_pending": reload_pending,
+            "displayed_index": displayed_index,
+            "next_index": next_index if total_slots > 0 else None,
+            "total_slots": total_slots,
+            "current_slot": current_slot,
+            "upcoming_slots": upcoming_slots,
+        }
+
+    def get_queue_thumb_source(self, index):
+        with self.__file_list_lock:
+            if self.__number_of_files == 0:
+                return None
+            try:
+                index = int(index)
+            except (TypeError, ValueError):
+                return None
+            if index < 0 or index >= self.__number_of_files:
+                return None
+            file_ids = self.__file_list[index]
+        slot = self.__build_queue_slot(index, file_ids)
+        return slot["primary_path"] if slot is not None else None
+
+    def __build_queue_slot(self, slot_index, file_ids):
+        file_infos = []
+        for file_id in file_ids:
+            row = self.__image_cache.get_file_info_readonly(file_id)
+            if row is None:
+                continue
+            file_infos.append(dict(row))
+
+        if not file_infos:
+            return {
+                "slot_index": slot_index,
+                "file_ids": list(file_ids),
+                "is_pair": len(file_ids) == 2,
+                "primary_label": "Unavailable",
+                "secondary_label": None,
+                "primary_path": None,
+                "thumb_version": 0,
+            }
+
+        primary = file_infos[0]
+        secondary = file_infos[1] if len(file_infos) > 1 else None
+        return {
+            "slot_index": slot_index,
+            "file_ids": list(file_ids),
+            "is_pair": len(file_ids) == 2,
+            "primary_label": os.path.basename(primary["fname"]),
+            "secondary_label": os.path.basename(secondary["fname"]) if secondary is not None else None,
+            "primary_path": primary["fname"],
+            "thumb_version": int(primary.get("last_modified") or 0),
+        }
 
     def get_next_file(self):
         missing_images = 0
@@ -416,7 +515,9 @@ class Model:
 
             # If we don't have any files to show, prepare the "no images" image
             # Also, set the reload_files flag so we'll check for new files on the next pass...
-            if self.__number_of_files == 0 or missing_images >= self.__number_of_files:
+            with self.__file_list_lock:
+                number_of_files = self.__number_of_files
+            if number_of_files == 0 or missing_images >= number_of_files:
                 pic1 = Pic(self.__no_files_img, 0, 0)
                 self.__reload_files = True
                 break
@@ -424,15 +525,21 @@ class Model:
             # If we've displayed all images...
             #   If it's time to shuffle, set a flag to do so
             #   Loop back, which will reload and shuffle if necessary
-            if self.__file_index == self.__number_of_files:
-                self.__num_run_through += 1
-                if self.shuffle and self.__num_run_through >= self.get_model_config()['reshuffle_num']:
-                    self.__reload_files = True
-                self.__file_index = 0
+            wrapped = False
+            with self.__file_list_lock:
+                if self.__file_index == self.__number_of_files:
+                    self.__num_run_through += 1
+                    if self.shuffle and self.__num_run_through >= self.get_model_config()['reshuffle_num']:
+                        self.__reload_files = True
+                    self.__file_index = 0
+                    wrapped = True
+            if wrapped:
                 continue
 
             # Load the current image set
-            file_ids = self.__file_list[self.__file_index]
+            with self.__file_list_lock:
+                file_ids = self.__file_list[self.__file_index]
+                self.__file_index += 1
             pic_row = self.__image_cache.get_file_info(file_ids[0])
             pic1 = Pic(**pic_row) if pic_row is not None else None
             if len(file_ids) == 2:
@@ -449,9 +556,6 @@ class Model:
             if (not pic1 and pic2):
                 pic1, pic2 = pic2, pic1
 
-            # Increment the image index for next time
-            self.__file_index += 1
-
             # If pic1 is valid here, everything is OK. Break out of the loop and return the set
             if pic1:
                 break
@@ -460,17 +564,21 @@ class Model:
             # Track the number of times we've looped back so we can abort if we don't have *any* images to display
             missing_images += 1
 
-        self.__current_pics = (pic1, pic2)
+        with self.__file_list_lock:
+            self.__current_pics = (pic1, pic2)
         return self.__current_pics
 
     def get_number_of_files(self):
+        with self.__file_list_lock:
+            file_list = list(self.__file_list)
         return sum(
                     sum(1 for pic in pics if pic is not None)
-                    for pics in self.__file_list
+                    for pics in file_list
                 )
 
     def get_current_pics(self):
-        return self.__current_pics
+        with self.__file_list_lock:
+            return self.__current_pics
 
     def delete_file(self):
         # delete the current pic. If it's a portrait pair then only the left one will be deleted
@@ -485,11 +593,12 @@ class Model:
             os.system("mkdir {}".format(move_to_dir))  # problems with ownership using python func
         os.system("mv '{}' '{}'".format(f_to_delete, move_to_dir))  # and with SMB drives
         # find and delete record from __file_list
-        for i, file_rec in enumerate(self.__file_list):
-            if file_rec[0] == pic.file_id:  # database id TODO check that db tidies itself up
-                self.__file_list.pop(i)
-                self.__number_of_files -= 1
-                break
+        with self.__file_list_lock:
+            for i, file_rec in enumerate(self.__file_list):
+                if file_rec[0] == pic.file_id:  # database id TODO check that db tidies itself up
+                    self.__file_list.pop(i)
+                    self.__number_of_files -= 1
+                    break
 
     def __get_files(self):
         if self.subdirectory != "":
@@ -510,7 +619,7 @@ class Model:
             recent_cutoff = time.time() - 3600 * 24 * recent_n
 
         if self.shuffle:
-            self.__file_list = self.__image_cache.query_cache_shuffle(where_clause, recent_cutoff=recent_cutoff)
+            file_list = self.__image_cache.query_cache_shuffle(where_clause, recent_cutoff=recent_cutoff)
         else:
             sort_list = []
             if recent_cutoff is not None:
@@ -523,11 +632,13 @@ class Model:
                     sort_list.append(col)
             sort_list.append("fname ASC")  # always finally sort on this in case nothing else to sort on or sort_cols is "" # noqa: E501
             sort_clause = ",".join(sort_list)
-            self.__file_list = self.__image_cache.query_cache(where_clause, sort_clause)
-        self.__number_of_files = len(self.__file_list)
-        self.__file_index = 0
-        self.__num_run_through = 0
-        self.__reload_files = False
+            file_list = self.__image_cache.query_cache(where_clause, sort_clause)
+        with self.__file_list_lock:
+            self.__file_list = file_list
+            self.__number_of_files = len(self.__file_list)
+            self.__file_index = 0
+            self.__num_run_through = 0
+            self.__reload_files = False
 
     def __generate_random_string(self, length):
         random_bytes = os.urandom(length // 2)

@@ -269,6 +269,129 @@ main {
     align-items: stretch;
 }
 
+.queue-card {
+    padding: 16px;
+}
+
+.queue-card__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.queue-card__summary {
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.queue-card__meta {
+    font-size: 12px;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+.queue-card__current {
+    margin-bottom: 10px;
+}
+
+.queue-list {
+    display: grid;
+    gap: 8px;
+}
+
+.queue-item {
+    display: grid;
+    grid-template-columns: 72px minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: center;
+    width: 100%;
+    padding: 9px 10px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: #151517;
+    color: var(--text);
+    text-align: left;
+    cursor: pointer;
+}
+
+.queue-item:disabled {
+    cursor: default;
+    opacity: 1;
+}
+
+.queue-item__thumb {
+    width: 72px;
+    height: 54px;
+    object-fit: cover;
+    border-radius: 8px;
+    background: #252528;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.queue-item__body {
+    min-width: 0;
+}
+
+.queue-item__title-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.queue-item__index,
+.queue-item__action,
+.queue-item__secondary {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.queue-item__title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.queue-item__secondary {
+    margin-top: 2px;
+    padding-left: 24px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.queue-item__action {
+    font-weight: 600;
+}
+
+.queue-item--current {
+    background: linear-gradient(180deg, #1f2418 0%, #171b14 100%);
+    border-color: #38492a;
+}
+
+.queue-badge {
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: rgba(10, 132, 255, 0.12);
+    color: #8cc1ff;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.queue-empty {
+    padding: 14px 12px;
+    border: 1px dashed var(--border);
+    border-radius: 10px;
+    color: var(--text-muted);
+    font-size: 13px;
+}
+
 .filter-dates {
     display: flex;
     gap: 12px;
@@ -485,6 +608,14 @@ main {
 
     .filter-dates .pf-field input {
         width: 100%;
+    }
+
+    .queue-item {
+        grid-template-columns: 64px minmax(0, 1fr);
+    }
+
+    .queue-item__action {
+        display: none;
     }
 
     /* Sticky apply button */

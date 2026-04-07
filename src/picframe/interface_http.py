@@ -8,7 +8,8 @@ import json
 import threading
 import base64
 import io
-from PIL import Image
+from collections import OrderedDict
+from PIL import Image, ImageOps
 
 try:
     from http.server import BaseHTTPRequestHandler, HTTPServer  # py3
@@ -25,6 +26,10 @@ except ImportError:
     register_heif_opener = None
 
 EXTENSIONS = [".jpg", ".jpeg", ".png"]
+QUEUE_PREVIEW_LIMIT = 8
+QUEUE_THUMB_SIZE = (112, 84)
+THUMB_CACHE_SIZE = 24
+THUMB_RESAMPLE = getattr(getattr(Image, "Resampling", Image), "LANCZOS")
 EXTENSION_TO_MIMETYPE = {
     # Videos
     '.mp4': 'video/mp4',
@@ -232,11 +237,31 @@ class RequestHandler(BaseHTTPRequestHandler):
                     page_ok = True
             else:  # server type request - get or set info
                 start_time = time.time()
+                params = dict(urlparse.parse_qsl(path_split[1], True))
+                if "queue_snapshot" in params:
+                    self.server._send_json(self, self.server._controller.get_queue_snapshot(limit=QUEUE_PREVIEW_LIMIT))
+                    self.connection.close()
+                    return
+                if "queue_jump" in params:
+                    result = self.server._controller.jump_to_queue_index(params.get("queue_jump"))
+                    self.server._send_json(self, result)
+                    self.connection.close()
+                    return
+                if "queue_thumb" in params:
+                    thumb_bytes = self.server._get_queue_thumb_bytes(params.get("queue_thumb"))
+                    self.send_response(200)
+                    self.send_header('Content-type', 'image/jpeg')
+                    self.send_header('Content-Length', str(len(thumb_bytes)))
+                    self.end_headers()
+                    self.wfile.write(thumb_bytes)
+                    self.connection.close()
+                    return
+
                 message = {}
                 self.send_response(200)
                 self.server._logger.debug('http request from: ' + self.client_address[0])
 
-                for key, value in dict(urlparse.parse_qsl(path_split[1], True)).items():
+                for key, value in params.items():
                     self.send_header('Content-type', 'text')
                     self.end_headers()
                     if key == "all":
@@ -320,6 +345,9 @@ class InterfaceHttp(HTTPServer):
         self._setters = [method for method in dir(controller_class)
                          if 'setter' in dir(getattr(controller_class, method))]
         self._jinja_env = Environment(loader=FileSystemLoader(self._html_path))
+        self._thumb_cache = OrderedDict()
+        self._thumb_cache_lock = threading.Lock()
+        self._thumb_placeholder = self._build_placeholder_thumb()
         t = threading.Thread(target=self.serve_forever)
         t.start()
 
@@ -339,6 +367,95 @@ class InterfaceHttp(HTTPServer):
             groups=groups,
             ids_json=json.dumps(ids_js),
         ).encode("utf-8")
+
+    def _send_json(self, handler, payload):
+        body = json.dumps(payload).encode("utf-8")
+        handler.send_response(200)
+        handler.send_header('Content-type', 'application/json')
+        handler.send_header('Content-Length', str(len(body)))
+        handler.end_headers()
+        handler.wfile.write(body)
+
+    def _build_placeholder_thumb(self):
+        image = Image.new("RGB", QUEUE_THUMB_SIZE, color=(28, 28, 30))
+        buf = io.BytesIO()
+        image.save(buf, format="JPEG", quality=60)
+        return buf.getvalue()
+
+    def _read_thumb_cache(self, cache_key):
+        with self._thumb_cache_lock:
+            cached = self._thumb_cache.get(cache_key)
+            if cached is None:
+                return None
+            self._thumb_cache.move_to_end(cache_key)
+            return cached
+
+    def _write_thumb_cache(self, cache_key, thumb_bytes):
+        with self._thumb_cache_lock:
+            self._thumb_cache[cache_key] = thumb_bytes
+            self._thumb_cache.move_to_end(cache_key)
+            while len(self._thumb_cache) > THUMB_CACHE_SIZE:
+                self._thumb_cache.popitem(last=False)
+
+    def _get_queue_thumb_bytes(self, index):
+        source_path = self._controller.get_queue_thumb_source(index)
+        if not source_path:
+            return self._thumb_placeholder
+
+        source_path = urlparse.unquote(source_path)
+        extension = os.path.splitext(source_path)[1].lower()
+        if extension in ('.heic', '.heif'):
+            try:
+                source_mtime = os.path.getmtime(source_path)
+            except OSError:
+                return self._thumb_placeholder
+        elif extension in EXTENSION_TO_MIMETYPE or extension in ('.png',):
+            try:
+                source_mtime = os.path.getmtime(source_path)
+            except OSError:
+                return self._thumb_placeholder
+        else:
+            try:
+                from picframe.video_streamer import VIDEO_EXTENSIONS
+                if extension in VIDEO_EXTENSIONS:
+                    frame_path = os.path.splitext(source_path)[0] + ".1.frame"
+                    source_mtime = os.path.getmtime(frame_path)
+                    source_path = frame_path
+                else:
+                    return self._thumb_placeholder
+            except OSError:
+                return self._thumb_placeholder
+
+        cache_key = (source_path, source_mtime, QUEUE_THUMB_SIZE)
+        cached = self._read_thumb_cache(cache_key)
+        if cached is not None:
+            return cached
+
+        try:
+            if extension in ('.heic', '.heif'):
+                image = heif_to_image(source_path)
+            else:
+                image = Image.open(source_path)
+            if image is None:
+                return self._thumb_placeholder
+
+            image = ImageOps.exif_transpose(image)
+            if image.mode not in ("RGB", "RGBA"):
+                image = image.convert("RGB")
+            elif image.mode == "RGBA":
+                background = Image.new("RGB", image.size, (28, 28, 30))
+                background.paste(image, mask=image.split()[-1])
+                image = background
+            image.thumbnail(QUEUE_THUMB_SIZE, THUMB_RESAMPLE)
+            buf = io.BytesIO()
+            image.save(buf, format="JPEG", quality=72, optimize=True)
+            thumb_bytes = buf.getvalue()
+        except Exception:
+            self._logger.warning("Failed to generate queue thumbnail for %s", source_path, exc_info=True)
+            return self._thumb_placeholder
+
+        self._write_thumb_cache(cache_key, thumb_bytes)
+        return thumb_bytes
 
     def stop(self):
         t = threading.Thread(target=self.shutdown, daemon=True)

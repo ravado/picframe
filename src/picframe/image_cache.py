@@ -268,6 +268,12 @@ class ImageCache:
             waittime - starttime, now - waittime)
         return row  # NB if select fails (i.e. moved file) will return None
 
+    def get_file_info_readonly(self, file_id):
+        if not file_id:
+            return None
+        sql = "SELECT * FROM all_data WHERE file_id = ?"
+        return self.__db.execute(sql, (file_id,)).fetchone()
+
     def get_column_names(self):
         sql = "PRAGMA table_info(all_data)"
         rows = self.__db.execute(sql).fetchall()
