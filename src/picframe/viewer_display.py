@@ -110,6 +110,8 @@ class ViewerDisplay:
         self.__image_overlay = None
         self.__prev_overlay_time = None
         self.__video_streamer = None
+        self.__paused = False
+        self.__pause_start_tm = None
 
         # [ivan] sensors configs
         self.__show_sensors = config['show_sensors']
@@ -561,7 +563,7 @@ class ViewerDisplay:
     def __draw_progress_bar(self, time_delay):
         if self.__next_tm == 0.0:
             return
-        tm = time.time()
+        tm = self.__pause_start_tm if self.__paused and self.__pause_start_tm is not None else time.time()
         progress = max(0.0, min(1.0, 1.0 - (self.__next_tm - tm) / time_delay)) if time_delay > 0 else 0.0
         bar_w = max(1, int(self.__display.width * progress))
 
@@ -573,6 +575,23 @@ class ViewerDisplay:
 
         if self.__progress_bar_fill:
             self.__progress_bar_fill.draw()
+
+    def __sync_pause_state(self, paused):
+        tm = time.time()
+        if paused != self.__paused:
+            self.__paused = paused
+            if paused:
+                self.__pause_start_tm = tm
+            elif self.__pause_start_tm is not None:
+                paused_for = tm - self.__pause_start_tm
+                if self.__next_tm > 0.0:
+                    self.__next_tm += paused_for
+                if self.__name_tm > 0.0:
+                    self.__name_tm += paused_for
+                self.__pause_start_tm = None
+        elif paused and self.__pause_start_tm is not None:
+            return self.__pause_start_tm
+        return tm
 
     # Draws the temperature and humidity info
     def __draw_sensors(self):
@@ -840,7 +859,7 @@ class ViewerDisplay:
             self.__slide.draw()
             return (loop_running, False, video_playing)  # now returns tuple with skip image flag and video_time added
 
-        tm = time.time()
+        tm = self.__sync_pause_state(paused)
         if pics is not None:
             self.stop_video()
             if pics[0] and os.path.splitext(pics[0].fname)[1].lower() in VIDEO_EXTENSIONS:
@@ -899,7 +918,7 @@ class ViewerDisplay:
             self.__slide.unif[48] = self.__slide.unif[48] * 0.95 + self.__xstep * t_factor * 0.05
             self.__slide.unif[49] = self.__slide.unif[49] * 0.95 + self.__ystep * t_factor * 0.05
 
-        if self.__alpha < 1.0:  # transition is happening
+        if self.__alpha < 1.0 and not paused:  # transition is happening
             self.__alpha += self.__delta_alpha
             if self.__alpha > 1.0:
                 self.__alpha = 1.0
