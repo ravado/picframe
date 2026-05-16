@@ -113,8 +113,8 @@ fi
 # so the success path stays tidy; on success we surface just the
 # "Successfully installed ..." line, which is the bit users actually care
 # about.
-step "Reinstalling picframe (editable)"
-info "Syncing dependencies from pyproject.toml..."
+step "Syncing dependencies"
+info "Checking pyproject.toml against the venv..."
 PIP_LOG="$(mktemp)"
 if "$VENV_PATH/bin/pip" install -e . > "$PIP_LOG" 2>&1; then
     NEW_PKGS="$(grep -E '^Successfully installed' "$PIP_LOG" | sed 's/^Successfully installed //' || true)"
