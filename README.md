@@ -50,6 +50,9 @@ When I started 2019 my DIY project building a raspberry powered digital picture 
 
 [Full documentation can be found at the project's wiki](https://github.com/helgeerbe/picframe/wiki).
 
+For this repository branch, see [Legacy Raspberry Pi Buster Setup](docs/LEGACY.md)
+for notes about the working Raspberry Pi Zero W1 photo frame deployment.
+
 Please note that PictureFrame may change significantly during its development.
 Bug reports, comments, feature requests and fixes are most welcome!
 
