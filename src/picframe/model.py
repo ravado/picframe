@@ -18,7 +18,7 @@ DEFAULT_CONFIG = {
         'blend_type': "blend",  # {"blend":0.0, "burn":1.0, "bump":2.0}
         'font_file': '~/picframe_data/data/fonts/NotoSans-Regular.ttf',
         'shader': '~/picframe_data/data/shaders/blend_new',
-        'show_text_fm': '%b %d, %Y',
+        'show_text_fm': '%d.%m.%Y',
         'show_text_tm': 20.0,
         'show_text_sz': 40,
         'show_text': "name location",
