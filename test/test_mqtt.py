@@ -116,6 +116,7 @@ def test_publish_state(mock_mqtt_client, mock_controller, mqtt_config):
     mock_controller.fade_time = 2  # Set a real value
     mock_controller.brightness = 0.8
     mock_controller.matting_images = 0.5
+    mock_controller.get_sensors_data.return_value = None
 
     # Call publish_state
     mqtt_interface.publish_state(image="test_image.jpg", image_attr={"attr1": "value1"})

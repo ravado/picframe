@@ -1,170 +1,274 @@
-
 async function getData() {
     const response = await fetch("/?all");
     return response.json();
 }
 
+async function getQueueData() {
+    const response = await fetch("/?queue_snapshot=1");
+    return response.json();
+}
 
-function createSpans() {
-    let span_div_html = "";
-    /* ids is defined in index.html */
-    Object.entries(ids).forEach(([element_id, element]) => {
-        let description = element_id.replace("_", " ");
-        if (element.desc !== undefined) {
-            description = element.desc;
-        }
-        if (element.type === "bool" || element.type === "action") {
-            span_div_html += `<span class="pf_span off" id=${element_id} onclick="toggle('${element_id}')">${description}</span>`
-        } else {
-            width = TYPES[element.type][0];
-            span_div_html += `<span class="pf_span">${description} <input id="${element_id}"  style="width: ${width}ch;"></span>`;
-        }
-    });
-    span_div = document.getElementById("spans");
-    span_div.innerHTML = span_div_html;
+function escapeHtml(value) {
+    return String(value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+}
 
-    // make enter press upload button
-    span_div.addEventListener("keyup", event => {
-        if (event.keyCode === 13) { // enter key
-            event.preventDefault();
-            uploadValues();
+function queueThumbUrl(slot) {
+    return `/?queue_thumb=${slot.slot_index}&v=${slot.thumb_version || 0}`;
+}
+
+function renderQueueSlot(slot, isCurrent = false) {
+    const pairBadge = slot.is_pair ? '<span class="queue-badge">pair</span>' : "";
+    const secondary = slot.secondary_label
+        ? `<div class="queue-item__secondary">${escapeHtml(slot.secondary_label)}</div>`
+        : "";
+    const buttonLabel = isCurrent ? "Current" : "Show Next";
+
+    return `
+        <button class="queue-item${isCurrent ? " queue-item--current" : ""}" data-queue-index="${slot.slot_index}" ${isCurrent ? "disabled" : ""}>
+            <img class="queue-item__thumb" src="${queueThumbUrl(slot)}" alt="" loading="lazy">
+            <div class="queue-item__body">
+                <div class="queue-item__title-row">
+                    <span class="queue-item__index">${slot.slot_index + 1}.</span>
+                    <span class="queue-item__title">${escapeHtml(slot.primary_label || "Unavailable")}</span>
+                    ${pairBadge}
+                </div>
+                ${secondary}
+            </div>
+            <span class="queue-item__action">${buttonLabel}</span>
+        </button>
+    `;
+}
+
+function renderQueue(snapshot) {
+    const summary = document.getElementById("queue-summary");
+    const meta = document.getElementById("queue-meta");
+    const current = document.getElementById("queue-current");
+    const list = document.getElementById("queue-list");
+
+    if (!summary || !meta || !current || !list) {
+        return;
+    }
+
+    if (!snapshot || snapshot.total_slots === 0) {
+        summary.textContent = "No queued images available";
+        meta.textContent = "";
+        current.innerHTML = "";
+        list.innerHTML = '<div class="queue-empty">Queue will appear after images are loaded.</div>';
+        return;
+    }
+
+    summary.textContent = snapshot.reload_pending ? "Queue refresh pending" : "Upcoming playlist slots";
+    if (snapshot.displayed_index === null || snapshot.displayed_index === undefined) {
+        meta.textContent = `next ${snapshot.next_index + 1} / ${snapshot.total_slots}`;
+    } else {
+        meta.textContent = `slot ${snapshot.displayed_index + 1} / ${snapshot.total_slots}`;
+    }
+
+    current.innerHTML = snapshot.current_slot
+        ? renderQueueSlot(snapshot.current_slot, true)
+        : '<div class="queue-empty">Current image will appear here after the first slide loads.</div>';
+
+    if (!snapshot.upcoming_slots || snapshot.upcoming_slots.length === 0) {
+        list.innerHTML = '<div class="queue-empty">No upcoming slots available right now.</div>';
+        return;
+    }
+
+    list.innerHTML = snapshot.upcoming_slots.map(slot => renderQueueSlot(slot)).join("");
+}
+
+async function refreshQueue() {
+    try {
+        const snapshot = await getQueueData();
+        renderQueue(snapshot);
+    } catch (_error) {
+        const list = document.getElementById("queue-list");
+        const summary = document.getElementById("queue-summary");
+        if (summary) summary.textContent = "Queue unavailable";
+        if (list) list.innerHTML = '<div class="queue-empty">Unable to load queue preview.</div>';
+    }
+}
+
+async function jumpToQueueIndex(index) {
+    const response = await fetch(`/?queue_jump=${index}`);
+    const result = await response.json();
+    if (!result.ok) {
+        await refreshQueue();
+        return;
+    }
+
+    const img = document.getElementById("preview-img");
+    setTimeout(() => {
+        if (img) {
+            img.src = "/current_image?t=" + Date.now();
         }
-    });
+        refreshQueue();
+    }, 500);
 }
 
 
 function isNumeric(num) {
-    return (typeof(num) === 'number' || typeof(num) === "string" && num.trim() !== '') && !isNaN(num);
+    return (typeof num === "number" || (typeof num === "string" && num.trim() !== "")) && !isNaN(num);
 }
 
 
 function refreshPage() {
-    Object.entries(ids).forEach(([element_id, element]) => { //ids declared previous to this script in each page
-        let docElement = document.getElementById(element_id);
-        let value = element.val;
+    Object.entries(ids).forEach(([id, el]) => {
+        const elem = document.getElementById(id);
+        if (!elem) return;
+        let value = el.val;
+
         if (isNumeric(value)) {
             value = parseFloat(value);
-            if (element.type === "number") { // integer or float
-                if (Math.floor(value) !== value) { //float
-                    value = value.toFixed(2);
-                }
-            } else if (element.type === "date") {
-                date = new Date(value * 1000); // js uses ms
-                value = `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`;
+            if (el.type === "number") {
+                if (Math.floor(value) !== value) value = value.toFixed(2);
+            } else if (el.type === "date") {
+                const d = new Date(value * 1000);
+                value = `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
             }
-        } else if (element.type === "bool") {
-            if (value == true || value === "true" || value === "True" || value === "ON") {
-                value = "true";
-            } else {
-                value = "false";
+        } else if (el.type === "bool") {
+            value = (value === true || value === "true" || value === "True" || value === "ON");
+        }
+
+        elem.value = value;
+        el.val = value;
+
+        if (el.type === "bool") {
+            elem.className = elem.className.replace(/pf-btn--on|pf-btn--off/g, "")
+                + (el.val ? " pf-btn--on" : " pf-btn--off");
+            elem.className = elem.className.replace(/\s+/g, " ").trim();
+
+            // Update power label if it's display_is_on
+            if (id === "display_is_on") {
+                const label = elem.querySelector(".power-label");
+                if (label) label.textContent = el.val ? "ON" : "OFF";
+            }
+
+            // Update pause button text
+            if (id === "paused") {
+                elem.innerHTML = el.val ? "&#9646;&#9646; Paused" : "&#9654; Playing";
             }
         }
-        docElement.value = value; //TODO have some fields not changed by ids.val?
-        element.val = value; // reset to refreshed version TODO check this is necessary?
-        if (element.type === "bool") {
-            docElement.className = (element.val ? "pf_span on" : "pf_span off");
+
+        // Sync brightness slider
+        const slider = document.getElementById(id + "_slider");
+        if (slider) {
+            slider.value = value;
         }
     });
 }
 
 
 function refreshData() {
-    getData().then(ret_val => {
-        let data_changed = false;
-        Object.entries(ret_val).forEach(([key, val]) => {
+    getData().then(data => {
+        let changed = false;
+        Object.entries(data).forEach(([key, val]) => {
             if (key in ids && ids[key].val != val) {
-                data_changed = true;
+                changed = true;
                 ids[key].val = val;
             }
         });
-        if (data_changed) {
-            refreshPage();
-        }
-    });
+        if (changed) refreshPage();
+    }).catch(() => {});
 }
 
 
 function repeatRefresh() {
     refreshData();
-    setTimeout(repeatRefresh, 120000); //refresh every 120s in never-ending loop - faster occasionally changes values while being edited!
+    refreshQueue();
+    setTimeout(repeatRefresh, 120000);
 }
 
 
 function uploadValues() {
-    let data_changed = false;
-    Object.entries(ids).forEach(([element_id, element]) => { //ids declared previous to this script in each page
-        if (element.fn === "setter" && element.type !== "bool") { // done by toggle function.
-            let docElement = document.getElementById(element_id);
-            if (docElement.value != element.val) {
-                console.log("updating:" + element_id + "->" + docElement.value + ":was:" + element.val + ":");
-                element.val = docElement.value;
-                fetch(`/?${element_id}=${docElement.value}`).then(() => data_changed = true); //TODO do we need to refresh?
+    const fetches = [];
+    Object.entries(ids).forEach(([id, el]) => {
+        if (el.fn === "setter" && el.type !== "bool") {
+            const elem = document.getElementById(id);
+            if (!elem) return;
+            if (elem.value != el.val) {
+                el.val = elem.value;
+                fetches.push(fetch(`/?${id}=${elem.value}`));
             }
         }
     });
-    if (data_changed) { //TODO - is this necessary in ids.val changed here?
-        refreshData();
+    if (fetches.length > 0) {
+        Promise.all(fetches).then(() => {
+            refreshData();
+            refreshQueue();
+        });
     }
 }
 
 
 function toggle(id) {
-    let element = ids[id];
-    if (element.type === "bool") { //toggle val and class
-        element.val = !(element.val);
+    const el = ids[id];
+    if (el.type === "bool") {
+        el.val = !el.val;
     }
-    let cmd = `/?${id}=${element.val}`
-    if (element.fn !== "setter") { // i.e. use fn
-        cmd = `/?${element.fn}`;
-        cmd = cmd.replace('$val', element.val);
+
+    let cmd = `/?${id}=${el.val}`;
+    if (el.fn !== "setter") {
+        cmd = `/?${el.fn}`.replace("$val", el.val);
     }
-    let docElement = document.getElementById(id);
-    let css = (element.val ? "pf_span on" : "pf_span off"); // return to this
-    docElement.className = "pf_span flash";
-    console.log(cmd);
-    fetch(cmd).then(() => afterFlash(docElement, css));
+
+    const elem = document.getElementById(id);
+    const restingClass = elem.dataset.resting || elem.className;
+
+    // Flash
+    const origClasses = elem.className;
+    elem.className = origClasses.replace(/pf-btn--\w+/g, "") + " pf-btn--flash";
+    elem.className = elem.className.replace(/\s+/g, " ").trim();
+
+    fetch(cmd).then(() => {
+        if (el.type === "bool") {
+            const onOff = el.val ? "pf-btn--on" : "pf-btn--off";
+            elem.className = origClasses.replace(/pf-btn--on|pf-btn--off/g, onOff);
+            elem.className = elem.className.replace(/\s+/g, " ").trim();
+
+            if (id === "display_is_on") {
+                const label = elem.querySelector(".power-label");
+                if (label) label.textContent = el.val ? "ON" : "OFF";
+            }
+            if (id === "paused") {
+                elem.innerHTML = el.val ? "&#9646;&#9646; Paused" : "&#9654; Playing";
+            }
+        } else {
+            elem.className = restingClass;
+        }
+
+        // Reload preview image after navigation actions
+        if (id === "back" || id === "next") {
+            const img = document.getElementById("preview-img");
+            setTimeout(() => {
+                if (img) {
+                    img.src = "/current_image?t=" + Date.now();
+                }
+                refreshQueue();
+            }, 500);
+        }
+    });
 }
 
 
-function afterFlash(element, css) {
-    element.className = css; //TODO slight time delay?
-}
-
-
-// the super slimmed down python server doesn't load style sheets from file so this is
-// done using javascript!
-function setStyle() {
-    var x = document.createElement("STYLE");
-    var t = document.createTextNode("body {\
-        background-color: black;\
-        color:rgb(94, 89, 79);\
-        font-family: 'Lucida Sans', 'Lucida Sans Regular', 'Lucida Grande', 'Lucida Sans Unicode', Geneva, Verdana, sans-serif;\
-    }\
-    button {\
-        margin: 5px;\
-        padding: 10px;\
-        border: none;\
-        border-radius: 8px;\
-        font-weight: bold;\
-    }\
-    .off {\
-        background-color: maroon;\
-        color:powderblue;\
-    }\
-    .on {\
-        background-color: olivedrab;\
-        color:rebeccapurple;\
-    }\
-    .flash {\
-        background-color: orange;\
-        color:powderblue;\
-    }\
-    .pf_span {\
-        margin: 2px;\
-        padding: 4px;\
-        border-style: solid;\
-        display: inline-block;\
-    }");
-    x.appendChild(t);
-    document.head.appendChild(x);
-}
+// Format initial values (dates, floats) and start polling
+refreshPage();
+refreshQueue();
+repeatRefresh();
+document.getElementById("controls").addEventListener("keyup", e => {
+    if (e.key === "Enter") {
+        e.preventDefault();
+        uploadValues();
+    }
+});
+document.getElementById("queue-card").addEventListener("click", e => {
+    const button = e.target.closest("[data-queue-index]");
+    if (!button || button.disabled) {
+        return;
+    }
+    jumpToQueueIndex(button.dataset.queueIndex);
+});

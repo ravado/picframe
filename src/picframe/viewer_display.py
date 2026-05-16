@@ -110,6 +110,8 @@ class ViewerDisplay:
         self.__image_overlay = None
         self.__prev_overlay_time = None
         self.__video_streamer = None
+        self.__paused = False
+        self.__pause_start_tm = None
 
         # [ivan] sensors configs
         self.__show_sensors = config['show_sensors']
@@ -131,6 +133,15 @@ class ViewerDisplay:
                 self.__sensors_data = None
         else:
             self.__sensors_data = None
+
+        # [ivan] progress bar configs
+        self.__show_progress_bar = config['show_progress_bar']
+        self.__progress_bar_height = config['progress_bar_height']
+        self.__progress_bar_color = config['progress_bar_color']
+        self.__progress_bar_position = config['progress_bar_position']
+        self.__progress_bar_tex = None
+        self.__progress_bar_fill = None
+        self.__prev_bar_w = -1
 
         ImageFile.LOAD_TRUNCATED_IMAGES = True  # occasional damaged file hangs app
 
@@ -440,6 +451,8 @@ class ViewerDisplay:
             if paused:
                 info_strings.append("PAUSED")
         final_string = " • ".join(info_strings)
+        if final_string:
+            final_string = "[{}] {}".format(pic.displayed_count, final_string)
 
         block = None
         if len(final_string) > 0:
@@ -531,6 +544,54 @@ class ViewerDisplay:
         if self.__image_overlay is not None:  # shouldn't be possible to get here otherwise, but just in case!
             self.__image_overlay.draw()
 
+
+    # [ivan] Creates a solid-color sprite for the progress bar
+    def __make_solid_bar(self, w, h, x):
+        if self.__progress_bar_tex is None:
+            r, g, b, a = self.__progress_bar_color
+            tex_arr = np.zeros((1, 1, 4), dtype=np.uint8)
+            tex_arr[0, 0] = [r, g, b, a]
+            self.__progress_bar_tex = pi3d.Texture(tex_arr, blend=True, mipmap=False, free_after_load=True)
+        bar_y = (self.__display.height - h) // 2
+        if self.__progress_bar_position == "B":
+            bar_y *= -1
+        sprite = pi3d.Sprite(w=w, h=h, x=x, y=bar_y, z=3.9)
+        sprite.set_draw_details(self.__flat_shader, [self.__progress_bar_tex])
+        return sprite
+
+    # [ivan] Draws the progress bar showing time remaining for current photo
+    def __draw_progress_bar(self, time_delay):
+        if self.__next_tm == 0.0:
+            return
+        tm = self.__pause_start_tm if self.__paused and self.__pause_start_tm is not None else time.time()
+        progress = max(0.0, min(1.0, 1.0 - (self.__next_tm - tm) / time_delay)) if time_delay > 0 else 0.0
+        bar_w = max(1, int(self.__display.width * progress))
+
+        if bar_w != self.__prev_bar_w:
+            x = bar_w // 2 - self.__display.width // 2
+            self.__progress_bar_fill = self.__make_solid_bar(
+                w=bar_w, h=self.__progress_bar_height, x=x)
+            self.__prev_bar_w = bar_w
+
+        if self.__progress_bar_fill:
+            self.__progress_bar_fill.draw()
+
+    def __sync_pause_state(self, paused):
+        tm = time.time()
+        if paused != self.__paused:
+            self.__paused = paused
+            if paused:
+                self.__pause_start_tm = tm
+            elif self.__pause_start_tm is not None:
+                paused_for = tm - self.__pause_start_tm
+                if self.__next_tm > 0.0:
+                    self.__next_tm += paused_for
+                if self.__name_tm > 0.0:
+                    self.__name_tm += paused_for
+                self.__pause_start_tm = None
+        elif paused and self.__pause_start_tm is not None:
+            return self.__pause_start_tm
+        return tm
 
     # Draws the temperature and humidity info
     def __draw_sensors(self):
@@ -798,7 +859,7 @@ class ViewerDisplay:
             self.__slide.draw()
             return (loop_running, False, video_playing)  # now returns tuple with skip image flag and video_time added
 
-        tm = time.time()
+        tm = self.__sync_pause_state(paused)
         if pics is not None:
             self.stop_video()
             if pics[0] and os.path.splitext(pics[0].fname)[1].lower() in VIDEO_EXTENSIONS:
@@ -857,7 +918,7 @@ class ViewerDisplay:
             self.__slide.unif[48] = self.__slide.unif[48] * 0.95 + self.__xstep * t_factor * 0.05
             self.__slide.unif[49] = self.__slide.unif[49] * 0.95 + self.__ystep * t_factor * 0.05
 
-        if self.__alpha < 1.0:  # transition is happening
+        if self.__alpha < 1.0 and not paused:  # transition is happening
             self.__alpha += self.__delta_alpha
             if self.__alpha > 1.0:
                 self.__alpha = 1.0
@@ -883,6 +944,8 @@ class ViewerDisplay:
 
         self.__slide.draw()
         self.__draw_overlay()
+        if self.__show_progress_bar:
+            self.__draw_progress_bar(time_delay)
         if self.clock_is_on:
             self.__draw_clock()
 
