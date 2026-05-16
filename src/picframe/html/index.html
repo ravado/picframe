@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="style.css"/>
 </head>
 <body>
-    <script>const ids = {{ ids_json }};</script>
+    <script>const ids = {{ ids | tojson }};</script>
 
     <header>
         <span class="header-title">PicFrame</span>

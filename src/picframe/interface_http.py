@@ -18,7 +18,7 @@ except ImportError:
     from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer  # py2
     import urlparse
 
-from jinja2 import Environment, FileSystemLoader
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 try:
     from pi_heif import register_heif_opener
@@ -160,11 +160,23 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.server._logger.warning(log_message)
             return
         try:
-            path_split = self.path.split("?")
+            parsed_url = urlparse.urlsplit(self.path)
+            request_path = parsed_url.path
+            params = dict(urlparse.parse_qsl(parsed_url.query, True))
             page_ok = False
-            if len(path_split) == 1:  # i.e. no ? - just serve index.html or image
-                if path_split[0] != "/":  # serve static page from html_path...
-                    html_page = path_split[0].strip("/")
+            if request_path != "/":  # serve static page from html_path...
+                html_page = request_path.strip("/")
+            else:
+                html_page = "index.html"
+            _, extension = os.path.splitext(html_page)
+            serve_static = (
+                not parsed_url.query
+                or html_page in ("current_image", "current_image_original")
+                or extension in [".html", ".js", ".css"]
+            )
+            if serve_static:
+                if request_path != "/":  # serve static page from html_path...
+                    html_page = request_path.strip("/")
                 else:
                     html_page = "index.html"
                 _, extension = os.path.splitext(html_page)
@@ -237,7 +249,6 @@ class RequestHandler(BaseHTTPRequestHandler):
                     page_ok = True
             else:  # server type request - get or set info
                 start_time = time.time()
-                params = dict(urlparse.parse_qsl(path_split[1], True))
                 if "queue_snapshot" in params:
                     self.server._send_json(self, self.server._controller.get_queue_snapshot(limit=QUEUE_PREVIEW_LIMIT))
                     self.connection.close()
@@ -344,7 +355,10 @@ class InterfaceHttp(HTTPServer):
         controller_class = controller.__class__
         self._setters = [method for method in dir(controller_class)
                          if 'setter' in dir(getattr(controller_class, method))]
-        self._jinja_env = Environment(loader=FileSystemLoader(self._html_path))
+        self._jinja_env = Environment(
+            loader=FileSystemLoader(self._html_path),
+            autoescape=select_autoescape(("html", "xml")),
+        )
         self._thumb_cache = OrderedDict()
         self._thumb_cache_lock = threading.Lock()
         self._thumb_placeholder = self._build_placeholder_thumb()
@@ -365,7 +379,7 @@ class InterfaceHttp(HTTPServer):
             groups.append({**group, "controls": controls})
         return self._jinja_env.get_template("index.html").render(
             groups=groups,
-            ids_json=json.dumps(ids_js),
+            ids=ids_js,
         ).encode("utf-8")
 
     def _send_json(self, handler, payload):
