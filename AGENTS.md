@@ -121,3 +121,32 @@ When creating new plans or tasks, add them to this folder with descriptive names
 - **Target platform:** Raspberry Pi (Linux/ARM), development on macOS
 - **Entry point:** `picframe` CLI or `python -m picframe.start`
 - **No test framework configured** — `test/` directory exists but minimal
+
+## Updating a Deployed Frame
+
+Initial install is handled by `usefull-scripts/photo-frame/migration/2_install_picframe.sh`
+(separate repo). For ongoing updates to an already-installed frame, use the
+in-repo helper:
+
+```bash
+ssh ivan@<frame>
+~/picframe/scripts/update.sh
+```
+
+`scripts/update.sh` does three things in order:
+
+1. `git pull --ff-only` on the currently checked-out branch.
+2. `pip install -e .` inside `~/.venv_picframe` so any **new dependencies**
+   added to `pyproject.toml` are installed. This is the key step — a plain
+   `git pull` will not pick up new deps and the frame will crash on startup
+   (e.g. `ModuleNotFoundError: No module named 'jinja2'`).
+3. `systemctl --user restart picframe.service` to relaunch labwc, which
+   re-spawns picframe via its autostart file.
+
+Overridable via env vars: `VENV_PATH`, `REPO_PATH`, `SERVICE_NAME`. Defaults
+match the layout produced by `2_install_picframe.sh` (user `ivan`,
+`~/.venv_picframe`, `~/picframe`).
+
+**Rule of thumb:** whenever a change touches `pyproject.toml`, frames must be
+updated via this script (or an equivalent `pip install -e .`), not just
+`git pull`.
