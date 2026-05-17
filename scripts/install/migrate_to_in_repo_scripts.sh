@@ -26,8 +26,8 @@ set -euo pipefail
 #   OLD_SCRIPTS_DIR  (default: /home/$PICFRAME_USER/Documents/Scripts)
 #
 # Usage:
-#   ~/picframe/scripts/migrate_to_in_repo_scripts.sh
-#   ~/picframe/scripts/migrate_to_in_repo_scripts.sh --yes   # non-interactive
+#   ~/picframe/scripts/install/migrate_to_in_repo_scripts.sh
+#   ~/picframe/scripts/install/migrate_to_in_repo_scripts.sh --yes   # non-interactive
 
 PICFRAME_USER="${PICFRAME_USER:-ivan}"
 RUN_HOME="/home/$PICFRAME_USER"
@@ -35,7 +35,17 @@ REPO_PATH="${REPO_PATH:-$RUN_HOME/picframe}"
 OLD_SCRIPTS_DIR="${OLD_SCRIPTS_DIR:-$RUN_HOME/Documents/Scripts}"
 
 OLD_SYNC_PATH="$OLD_SCRIPTS_DIR/photo-frame/sync_photos_from_nasik.sh"
-NEW_SYNC_PATH="$REPO_PATH/scripts/sync_photos_from_nasik.sh"
+NEW_SYNC_PATH="$REPO_PATH/scripts/runtime/sync_photos_from_nasik.sh"
+
+# Crontab patterns considered stale by this migration. Each is an extended
+# regex applied per-line. Hits are listed and (with confirmation) stripped.
+#   - Documents/[Ss]cripts: old ops-script clone, any owning user (some frames
+#     still have lines referencing the legacy /home/ivan.cherednychok/... user).
+#   - monitor_control\.sh:  display on/off helper. Dead on Wayland (uses
+#     vcgencmd + xset dpms); display scheduling is handled by the
+#     curl http://localhost:9000/?display_is_on=... cron lines instead.
+#   - sync_and_resize_photos: legacy sync chain superseded by sync_photos_from_nasik.sh.
+STALE_CRON_REGEX='Documents/[Ss]cripts|monitor_control\.sh|sync_and_resize_photos'
 
 UNIT_TEMPLATE="/etc/systemd/system/photo-sync@.service"
 UNIT_BASE="/etc/systemd/system/photo-sync.service"
@@ -153,31 +163,39 @@ done
 # 4) Sweep crontabs for stale references
 ###########################
 echo
-echo "🕵️  Scanning crontabs for references to $OLD_SCRIPTS_DIR..."
+echo "🕵️  Scanning crontabs for stale references..."
+echo "    Patterns: $STALE_CRON_REGEX"
 
-stale_cron_remains=0
+# stale_dir_remains tracks ONLY references to $OLD_SCRIPTS_DIR — that's the
+# directory step 5 wants to delete, so any remaining reference to it is a
+# blocker for the rm -rf. Other stale matches (monitor_control,
+# sync_and_resize_photos) are noise we offer to remove but don't block on.
+stale_dir_remains=0
 for u in root "$PICFRAME_USER"; do
   cron_content="$(sudo crontab -u "$u" -l 2>/dev/null || true)"
-  if ! grep -qF "$OLD_SCRIPTS_DIR" <<<"$cron_content"; then
+  if ! grep -qE "$STALE_CRON_REGEX" <<<"$cron_content"; then
     continue
   fi
 
   echo "⚠️  Stale entries in ${u}'s crontab:"
-  grep -nF "$OLD_SCRIPTS_DIR" <<<"$cron_content" | sed 's/^/      /'
+  grep -nE "$STALE_CRON_REGEX" <<<"$cron_content" | sed 's/^/      /'
 
   if confirm "    Remove these lines from ${u}'s crontab?"; then
     backup_cron="/tmp/crontab-${u}-${TIMESTAMP}.bak"
     printf '%s\n' "$cron_content" > "$backup_cron"
     echo "    💾 Backed up ${u}'s crontab → $backup_cron"
-    new_cron="$(grep -vF "$OLD_SCRIPTS_DIR" <<<"$cron_content" || true)"
+    new_cron="$(grep -vE "$STALE_CRON_REGEX" <<<"$cron_content" || true)"
     printf '%s\n' "$new_cron" | sudo crontab -u "$u" -
     echo "    ✅ Removed stale entries from ${u}'s crontab"
   else
     echo "    👌 Left ${u}'s crontab unchanged — edit later with: sudo crontab -u $u -e"
-    stale_cron_remains=1
+    # Only the OLD_SCRIPTS_DIR pattern blocks the dir-delete in step 5.
+    if grep -qF "$OLD_SCRIPTS_DIR" <<<"$cron_content"; then
+      stale_dir_remains=1
+    fi
   fi
 done
-[ "$stale_cron_remains" -eq 0 ] && echo "✅ No stale crontab references remain"
+[ "$stale_dir_remains" -eq 0 ] && echo "✅ No remaining crontab references to $OLD_SCRIPTS_DIR"
 
 ###########################
 # 5) Offer to remove old folder
@@ -185,7 +203,7 @@ done
 echo
 if [ ! -d "$OLD_SCRIPTS_DIR" ]; then
   echo "ℹ️  $OLD_SCRIPTS_DIR not found — nothing to clean up"
-elif [ "$stale_cron_remains" -eq 1 ]; then
+elif [ "$stale_dir_remains" -eq 1 ]; then
   echo "🛑 Refusing to delete $OLD_SCRIPTS_DIR — crontab still references it."
   echo "   Clean the crontab first, then re-run this script."
 else

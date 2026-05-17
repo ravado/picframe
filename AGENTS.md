@@ -122,18 +122,36 @@ When creating new plans or tasks, add them to this folder with descriptive names
 - **Entry point:** `picframe` CLI or `python -m picframe.start`
 - **No test framework configured** — `test/` directory exists but minimal
 
+## Operational Scripts
+
+All shipped scripts live under `scripts/` and are catalogued in
+[`scripts/README.md`](scripts/README.md) — that file is the authoritative
+index of what each script does and where it's invoked from. Layout:
+
+- `scripts/runtime/` — invoked by cron/systemd on a deployed frame
+- `scripts/ops/` — manual maintenance (update, audit, compare)
+- `scripts/install/` — numbered `1_…5_` install flow + helpers
+- `scripts/sensors/` — one-shot hardware probes
+- `scripts/monitoring/` — log/metric forwarder installers (Alloy / Fluent Bit)
+- `scripts/photo-normalization/` — NAS + DB extension/dedupe admin
+- `scripts/_quarantine/` — verified-dead, awaiting deletion
+
+Read `scripts/README.md` before adding, moving, or deleting anything in
+that tree — the runtime chain (cron → `photo-sync@.service` →
+`runtime/sync_photos_from_nasik.sh` → rclone) is documented there.
+
 ## Updating a Deployed Frame
 
-Initial install is handled by `scripts/migration/2_install_picframe.sh`
+Initial install is handled by `scripts/install/2_install_picframe.sh`
 in this repo. For ongoing updates to an already-installed frame, use the
 in-repo helper:
 
 ```bash
 ssh ivan@<frame>
-~/picframe/scripts/update.sh
+~/picframe/scripts/ops/update.sh
 ```
 
-`scripts/update.sh` does three things in order:
+`scripts/ops/update.sh` does three things in order:
 
 1. `git pull --ff-only` on the currently checked-out branch.
 2. `pip install -e .` inside `~/.venv_picframe` so any **new dependencies**
@@ -144,7 +162,7 @@ ssh ivan@<frame>
    re-spawns picframe via its autostart file.
 
 Overridable via env vars: `VENV_PATH`, `REPO_PATH`, `SERVICE_NAME`. Defaults
-match the layout produced by `2_install_picframe.sh` (user `ivan`,
+match the layout produced by `install/2_install_picframe.sh` (user `ivan`,
 `~/.venv_picframe`, `~/picframe`).
 
 **Rule of thumb:** whenever a change touches `pyproject.toml`, frames must be

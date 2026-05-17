@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# Usage: ./sync_and_resize_photos.sh <home|batanovs|cherednychoks>
+# Usage: ./sync_photos_from_nasik.sh <home|batanovs|cherednychoks>
 if [[ $# -lt 1 ]]; then
   echo "Usage: $0 <home|batanovs|cherednychoks>"
   exit 1
