@@ -7,20 +7,32 @@ set -euo pipefail
 # ~/picframe/scripts/.
 #
 # What it does:
-#   1. Pulls the latest picframe so ~/picframe/scripts/ exists.
+#   1. Pulls the latest picframe (as the frame user) so ~/picframe/scripts/ exists.
 #   2. Backs up each photo-sync systemd unit to <unit>.bak.<timestamp>.
 #   3. Rewrites the photo-sync systemd units to point at the new path.
-#   4. Reloads systemd.
-#   5. Offers to delete the old ~/Documents/Scripts/ clone (y/N prompt).
+#   4. Reloads systemd and verifies the units parse.
+#   5. Scans root + frame-user crontabs for stale references and offers cleanup.
+#   6. Offers to delete the old ~/Documents/Scripts/ clone — refuses while any
+#      crontab still references it.
 #
-# Safe to run more than once: each step is idempotent. Every run that
-# actually rewrites a unit produces a fresh timestamped .bak alongside it.
+# Safe to run more than once: each step is idempotent.
+#
+# Flags:
+#   --yes, -y     Don't prompt; accept all destructive offers
+#
+# Env overrides:
+#   PICFRAME_USER    (default: ivan)
+#   REPO_PATH        (default: /home/$PICFRAME_USER/picframe)
+#   OLD_SCRIPTS_DIR  (default: /home/$PICFRAME_USER/Documents/Scripts)
 #
 # Usage:
 #   ~/picframe/scripts/migrate_to_in_repo_scripts.sh
+#   ~/picframe/scripts/migrate_to_in_repo_scripts.sh --yes   # non-interactive
 
-REPO_PATH="${REPO_PATH:-$HOME/picframe}"
-OLD_SCRIPTS_DIR="${OLD_SCRIPTS_DIR:-$HOME/Documents/Scripts}"
+PICFRAME_USER="${PICFRAME_USER:-ivan}"
+RUN_HOME="/home/$PICFRAME_USER"
+REPO_PATH="${REPO_PATH:-$RUN_HOME/picframe}"
+OLD_SCRIPTS_DIR="${OLD_SCRIPTS_DIR:-$RUN_HOME/Documents/Scripts}"
 
 OLD_SYNC_PATH="$OLD_SCRIPTS_DIR/photo-frame/sync_photos_from_nasik.sh"
 NEW_SYNC_PATH="$REPO_PATH/scripts/sync_photos_from_nasik.sh"
@@ -30,8 +42,40 @@ UNIT_BASE="/etc/systemd/system/photo-sync.service"
 
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 BACKUPS=()
+ASSUME_YES=0
+
+for arg in "$@"; do
+  case "$arg" in
+    -y|--yes) ASSUME_YES=1 ;;
+    -h|--help)
+      sed -n '3,30p' "$0" | sed 's/^# \{0,1\}//'
+      exit 0
+      ;;
+    *) echo "Unknown flag: $arg" >&2; exit 2 ;;
+  esac
+done
+
+# Run a command as the picframe user. If we're already that user, run inline —
+# avoids touching .git ownership when invoked via sudo / as root.
+as_picframe() {
+  if [ "$(id -un)" = "$PICFRAME_USER" ]; then
+    "$@"
+  else
+    sudo -u "$PICFRAME_USER" "$@"
+  fi
+}
+
+confirm() {
+  local prompt="$1"
+  [ "$ASSUME_YES" -eq 1 ] && return 0
+  [ -t 0 ] || return 1
+  local ans
+  read -r -p "$prompt [y/N]: " ans
+  [[ "$ans" =~ ^[Yy]$ ]]
+}
 
 echo "=== Migrate frame to in-repo scripts/ ==="
+echo "   Frame user:   $PICFRAME_USER"
 echo "   Repo:         $REPO_PATH"
 echo "   Old location: $OLD_SCRIPTS_DIR"
 echo "   New sync:     $NEW_SYNC_PATH"
@@ -45,8 +89,8 @@ if [ ! -d "$REPO_PATH/.git" ]; then
   exit 1
 fi
 
-echo "📥 Pulling latest picframe..."
-if ! git -C "$REPO_PATH" pull --ff-only; then
+echo "📥 Pulling latest picframe (as $PICFRAME_USER)..."
+if ! as_picframe git -C "$REPO_PATH" pull --ff-only; then
   echo "⚠️  git pull failed. Resolve manually then re-run this script."
   exit 1
 fi
@@ -56,7 +100,7 @@ if [ ! -f "$NEW_SYNC_PATH" ]; then
   echo "   Has the migration been merged to the branch this frame tracks?"
   exit 1
 fi
-chmod +x "$NEW_SYNC_PATH"
+as_picframe chmod +x "$NEW_SYNC_PATH"
 echo "✅ scripts/ available at $REPO_PATH/scripts/"
 
 ###########################
@@ -64,9 +108,7 @@ echo "✅ scripts/ available at $REPO_PATH/scripts/"
 ###########################
 changed=0
 for unit in "$UNIT_TEMPLATE" "$UNIT_BASE"; do
-  if [ ! -f "$unit" ]; then
-    continue
-  fi
+  [ -f "$unit" ] || continue
   if grep -qF "$OLD_SYNC_PATH" "$unit"; then
     backup="${unit}.bak.${TIMESTAMP}"
     echo "💾 Backing up $unit → $backup"
@@ -85,46 +127,84 @@ done
 if [ "$changed" -eq 1 ]; then
   echo "🔄 Reloading systemd..."
   sudo systemctl daemon-reload
-  echo "✅ systemd daemon-reload done"
+  echo "🔎 Verifying rewritten units..."
+  for unit in "$UNIT_TEMPLATE" "$UNIT_BASE"; do
+    [ -f "$unit" ] || continue
+    if sudo systemd-analyze verify "$unit" 2>&1; then
+      echo "   ✅ $(basename "$unit") parses cleanly"
+    else
+      echo "   ⚠️  $(basename "$unit") failed verify — review above"
+    fi
+  done
 else
   echo "ℹ️  No systemd units needed rewriting"
 fi
 
 ###########################
-# 3) Verify the rewritten unit can find the script
+# 3) Sanity: script is executable when units reference it
 ###########################
 for unit in "$UNIT_TEMPLATE" "$UNIT_BASE"; do
-  if [ -f "$unit" ] && grep -qF "$NEW_SYNC_PATH" "$unit"; then
-    if [ ! -x "$NEW_SYNC_PATH" ]; then
-      echo "⚠️  $NEW_SYNC_PATH exists but is not executable"
-    fi
+  if [ -f "$unit" ] && grep -qF "$NEW_SYNC_PATH" "$unit" && [ ! -x "$NEW_SYNC_PATH" ]; then
+    echo "⚠️  $NEW_SYNC_PATH exists but is not executable"
   fi
 done
 
 ###########################
-# 4) Offer to remove old folder
+# 4) Sweep crontabs for stale references
 ###########################
 echo
-if [ -d "$OLD_SCRIPTS_DIR" ]; then
+echo "🕵️  Scanning crontabs for references to $OLD_SCRIPTS_DIR..."
+
+stale_cron_remains=0
+for u in root "$PICFRAME_USER"; do
+  cron_content="$(sudo crontab -u "$u" -l 2>/dev/null || true)"
+  if ! grep -qF "$OLD_SCRIPTS_DIR" <<<"$cron_content"; then
+    continue
+  fi
+
+  echo "⚠️  Stale entries in ${u}'s crontab:"
+  grep -nF "$OLD_SCRIPTS_DIR" <<<"$cron_content" | sed 's/^/      /'
+
+  if confirm "    Remove these lines from ${u}'s crontab?"; then
+    backup_cron="/tmp/crontab-${u}-${TIMESTAMP}.bak"
+    printf '%s\n' "$cron_content" > "$backup_cron"
+    echo "    💾 Backed up ${u}'s crontab → $backup_cron"
+    new_cron="$(grep -vF "$OLD_SCRIPTS_DIR" <<<"$cron_content" || true)"
+    printf '%s\n' "$new_cron" | sudo crontab -u "$u" -
+    echo "    ✅ Removed stale entries from ${u}'s crontab"
+  else
+    echo "    👌 Left ${u}'s crontab unchanged — edit later with: sudo crontab -u $u -e"
+    stale_cron_remains=1
+  fi
+done
+[ "$stale_cron_remains" -eq 0 ] && echo "✅ No stale crontab references remain"
+
+###########################
+# 5) Offer to remove old folder
+###########################
+echo
+if [ ! -d "$OLD_SCRIPTS_DIR" ]; then
+  echo "ℹ️  $OLD_SCRIPTS_DIR not found — nothing to clean up"
+elif [ "$stale_cron_remains" -eq 1 ]; then
+  echo "🛑 Refusing to delete $OLD_SCRIPTS_DIR — crontab still references it."
+  echo "   Clean the crontab first, then re-run this script."
+else
   echo "🗂️  Old folder still present: $OLD_SCRIPTS_DIR"
   echo "    Frames no longer need it — the picframe repo now ships these scripts."
-  read -r -p "    Delete $OLD_SCRIPTS_DIR now? [y/N]: " REPLY
-  if [[ "$REPLY" =~ ^[Yy]$ ]]; then
+  if confirm "    Delete $OLD_SCRIPTS_DIR now?"; then
     rm -rf "$OLD_SCRIPTS_DIR"
     echo "🗑️  Removed $OLD_SCRIPTS_DIR"
   else
     echo "👌 Left $OLD_SCRIPTS_DIR in place. Delete manually when ready:"
     echo "      rm -rf $OLD_SCRIPTS_DIR"
   fi
-else
-  echo "ℹ️  $OLD_SCRIPTS_DIR not found — nothing to clean up"
 fi
 
 echo
 echo "=== ✅ Migration complete ==="
 echo
 if [ "${#BACKUPS[@]}" -gt 0 ]; then
-  echo "💾 Backups created (delete once the new units are verified):"
+  echo "💾 Unit backups created (delete once the new units are verified):"
   for b in "${BACKUPS[@]}"; do
     echo "   - $b"
   done
