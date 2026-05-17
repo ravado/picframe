@@ -23,9 +23,15 @@ class GeoReverse:
         try:
             reverse_url_formatted = URL.format(lat, lon, self.__zoom, self.__geo_key, self.__language)
             self.__logger.info(f"== Getting address from coordinates with {reverse_url_formatted}")
-            
-            with urllib.request.urlopen(reverse_url_formatted,
-                                        timeout=3.0) as req:
+
+            # Nominatim's usage policy requires a User-Agent identifying the
+            # application + a contact; default Python-urllib UA gets 403.
+            # https://operations.osmfoundation.org/policies/nominatim/
+            request = urllib.request.Request(
+                reverse_url_formatted,
+                headers={"User-Agent": f"picframe ({self.__geo_key})"},
+            )
+            with urllib.request.urlopen(request, timeout=3.0) as req:
                 data = json.loads(req.read().decode())
             
             self.__logger.info(f"== Response: {data}")
