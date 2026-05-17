@@ -90,9 +90,10 @@ if [ -z "${HTML_DEST:-}" ]; then
         HTML_DEST="$(awk '
             /^[a-zA-Z_]+:/ { in_http = ($1 == "http:") }
             in_http && $1 == "path:" {
-                sub(/^[^:]+:[[:space:]]*/, "")
-                gsub(/^["'\'']|["'\'']$/, "")
-                sub(/[[:space:]]*#.*$/, "")
+                sub(/^[^:]+:[[:space:]]*/, "")  # strip "path:"
+                sub(/[[:space:]]*#.*$/, "")     # strip inline comment
+                sub(/[[:space:]]+$/, "")        # strip trailing whitespace
+                gsub(/^["'\'']|["'\'']$/, "")   # strip outer quotes (now at end-of-string)
                 print; exit
             }
         ' "$CONFIG_FILE")"
