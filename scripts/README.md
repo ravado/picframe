@@ -46,6 +46,20 @@ Update it to match your SMB and PicFrame configuration.
 ./3_restore_picframe_backup.sh home latest
 ```
 
+## Migrating an already-deployed frame
+
+If the frame was set up under the old layout (ops scripts cloned to
+`~/Documents/Scripts/` from `ravado/usefull-scripts`), run this once to
+switch it over to the in-repo `scripts/` layout:
+
+```bash
+~/picframe/scripts/migrate_to_in_repo_scripts.sh
+```
+
+It pulls the latest picframe, rewrites the `photo-sync` systemd units to
+point at `~/picframe/scripts/sync_photos_from_nasik.sh`, and prompts
+before deleting the old `~/Documents/Scripts/` folder.
+
 ## Links
 
 - [Logs & Monitoring — README](monitoring/README.md)  
