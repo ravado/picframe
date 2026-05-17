@@ -140,3 +140,6 @@ dmypy.json
 
 #mac os
 .DS_Store
+
+# Photo-frame ops secrets — never commit
+scripts/migration/backup.env
