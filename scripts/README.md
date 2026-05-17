@@ -35,6 +35,7 @@ script in this folder.
 |---|---|---|
 | `runtime/sync_photos_from_nasik.sh` | rclone sync NAS → `~/Pictures/PhotoFrame` | `photo-sync@.service` + `photo-sync.service` (daily cron) |
 | `ops/update.sh` | `git pull` + `pip install -e .` + restart `picframe.service` | manual on each frame |
+| `update_web_ui.sh` | sync redesigned web UI from `src/picframe/html/` → runtime `~/picframe_data/html/` (diff first, `--force`/`--check` flags) | manual, after web UI changes |
 | `ops/check_date_range_files.py` | list/find photos in a date window | manual |
 | `ops/compare_missing_files.sh` | diff two photo directories | manual |
 | `ops/calculate_photo_hash.sh` | hash a photo for dedupe checks | manual |
@@ -70,7 +71,25 @@ script in this folder.
 - **Fresh install** → `install/README.md`
 - **Migrate an existing frame to this layout** → `install/migrate_to_in_repo_scripts.sh`
 - **Update an existing frame** → `ops/update.sh` (run as `ivan` on the Pi)
+- **Sync redesigned web UI after a pull** → `update_web_ui.sh`
 - **Add a new sync remote** → `install/5_configure_photo_sync.sh <instance>`
+
+## Service control
+
+picframe runs as a **user** systemd unit (`~/.config/systemd/user/picframe.service`),
+so no `sudo`. Run these as `ivan` on the Pi:
+
+```bash
+systemctl --user restart picframe          # restart after a code change
+systemctl --user status  picframe          # check if running + last lines of log
+systemctl --user stop    picframe
+systemctl --user start   picframe
+journalctl   --user -u   picframe -f       # tail live logs
+journalctl   --user -u   picframe --since today
+```
+
+For the full update flow (git pull + pip install + restart) use `ops/update.sh`
+instead — it does all three steps in order.
 
 ## Why `_quarantine/`
 
