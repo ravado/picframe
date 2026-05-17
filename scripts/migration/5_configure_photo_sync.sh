@@ -20,7 +20,7 @@ fi
 # === CONSTANTS / PATHS ===
 RUN_USER="$PICFRAME_USER"
 RUN_HOME="/home/${RUN_USER}"
-SCRIPT_PATH="${RUN_HOME}/Documents/Scripts/photo-frame/sync_photos_from_nasik.sh"
+SCRIPT_PATH="${RUN_HOME}/picframe/scripts/sync_photos_from_nasik.sh"
 RCLONE_CONFIG="${RUN_HOME}/.config/rclone/rclone.conf"
 
 SYSTEMD_TEMPLATE_NAME="photo-sync@.service"

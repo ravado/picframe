@@ -142,7 +142,7 @@ fi
 # Restore files
 ###########################
 echo "📂 Creating necessary directories..."
-mkdir -p ~/Documents/Scripts ~/.config ~/Pictures/PhotoFrame ~/Pictures/PhotoFrameDeleted
+mkdir -p ~/.config ~/Pictures/PhotoFrame ~/Pictures/PhotoFrameDeleted
 
 echo "🖼️ Restoring PicFrame data..."
 if [ -d "$BACKUP_FULL/picframe_data" ]; then
@@ -189,29 +189,6 @@ if [ -f "$BACKUP_FULL/git_config/user.email" ]; then
     GIT_EMAIL=$(cat "$BACKUP_FULL/git_config/user.email")
     git config --global user.email "$GIT_EMAIL"
     [ $VERBOSE -eq 1 ] && echo "   → git user.email set to $GIT_EMAIL"
-fi
-
-echo "📂 Restoring Documents/Scripts repository..."
-
-BRANCH_FILE="$BACKUP_FULL/git_config/scripts_branch"
-SAVED_BRANCH="photoframe-home"
-[ -f "$BRANCH_FILE" ] && SAVED_BRANCH=$(cat "$BRANCH_FILE")
-
-TARGET_DIR=~/Documents/Scripts
-mkdir -p ~/Documents
-
-if [ -d "$TARGET_DIR/.git" ]; then
-    echo "🔄 Updating existing repo..."
-    git -C "$TARGET_DIR" checkout main
-    git -C "$TARGET_DIR" pull --ff-only
-    echo "✅ Repo updated to latest main."
-else
-    echo "🔄 Cloning usefull-scripts repo (branch: main)..."
-    if git clone --branch main --single-branch git@github.com:ravado/usefull-scripts.git "$TARGET_DIR"; then
-        echo "✅ Scripts repository cloned on branch main"
-    else
-        echo "❌ Failed to clone Scripts repository. Check SSH keys and GitHub access."
-    fi
 fi
 
 ###########################
