@@ -84,6 +84,25 @@ confirm() {
   [[ "$ans" =~ ^[Yy]$ ]]
 }
 
+# Detect the photo-sync instance configured on this frame. Looks at the daily
+# cron line written by 5_configure_photo_sync.sh first, then falls back to any
+# instantiated systemd unit. Echoes empty if nothing is found.
+detect_instance() {
+  local inst u
+  for u in "$PICFRAME_USER" root; do
+    inst="$(sudo crontab -u "$u" -l 2>/dev/null \
+            | grep -oE 'photo-sync@[A-Za-z0-9_-]+' \
+            | head -1 \
+            | sed 's/photo-sync@//')"
+    [ -n "$inst" ] && { echo "$inst"; return; }
+  done
+  inst="$(systemctl list-units --all --no-legend 'photo-sync@*' 2>/dev/null \
+          | grep -oE 'photo-sync@[A-Za-z0-9_-]+' \
+          | head -1 \
+          | sed 's/photo-sync@//')"
+  [ -n "$inst" ] && echo "$inst" || true
+}
+
 echo "=== Migrate frame to in-repo scripts/ ==="
 echo "   Frame user:   $PICFRAME_USER"
 echo "   Repo:         $REPO_PATH"
@@ -179,6 +198,8 @@ for u in root "$PICFRAME_USER"; do
 
   echo "⚠️  Stale entries in ${u}'s crontab:"
   grep -nE "$STALE_CRON_REGEX" <<<"$cron_content" | sed 's/^/      /'
+  echo "    💡 Prefer to rewrite the path instead of deleting?"
+  echo "       Skip below and edit manually: sudo crontab -u $u -e"
 
   if confirm "    Remove these lines from ${u}'s crontab?"; then
     backup_cron="/tmp/crontab-${u}-${TIMESTAMP}.bak"
@@ -231,6 +252,13 @@ if [ "${#BACKUPS[@]}" -gt 0 ]; then
   echo "   sudo cp -a <unit>.bak.${TIMESTAMP} <unit> && sudo systemctl daemon-reload"
   echo
 fi
-echo "Smoke test the photo-sync unit:"
-echo "  sudo systemctl start photo-sync@home"
-echo "  systemctl status photo-sync@home"
+DETECTED_INSTANCE="$(detect_instance || true)"
+if [ -n "$DETECTED_INSTANCE" ]; then
+  echo "Smoke test the photo-sync unit (detected instance: $DETECTED_INSTANCE):"
+  echo "  sudo systemctl start photo-sync@${DETECTED_INSTANCE}"
+  echo "  systemctl status photo-sync@${DETECTED_INSTANCE}"
+else
+  echo "Smoke test the photo-sync unit (couldn't detect instance — pick one):"
+  echo "  sudo systemctl start photo-sync@<instance>   # e.g., home, batanovs, cherednychoks"
+  echo "  systemctl status photo-sync@<instance>"
+fi
