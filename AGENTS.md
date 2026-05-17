@@ -124,8 +124,8 @@ When creating new plans or tasks, add them to this folder with descriptive names
 
 ## Updating a Deployed Frame
 
-Initial install is handled by `usefull-scripts/photo-frame/migration/2_install_picframe.sh`
-(separate repo). For ongoing updates to an already-installed frame, use the
+Initial install is handled by `scripts/migration/2_install_picframe.sh`
+in this repo. For ongoing updates to an already-installed frame, use the
 in-repo helper:
 
 ```bash

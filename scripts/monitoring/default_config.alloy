@@ -1,0 +1,126 @@
+livedebugging {
+  enabled = false
+}
+
+logging {
+  level = "info"
+}
+
+// -------- Loki pipeline --------
+
+loki.write "default" {
+  endpoint {
+    url = "${LOKI_URL}"
+  }
+}
+
+loki.source.journal "loki_source_journal" {
+  max_age = "24h"
+
+  labels = {
+    job = "journal_logs",
+  }
+
+  // Apply relabeling to journal entries
+  relabel_rules = discovery.relabel.journal_relabel_rules.rules
+
+  forward_to = [loki.write.default.receiver]
+}
+
+discovery.relabel "journal_relabel_rules" {
+  targets = []
+
+  // Match cron-started jobs tagged via: systemd-cat -t picframe-backup ...
+  rule {
+    source_labels = ["SYSLOG_IDENTIFIER"]
+    regex         = "(picframe|picframe-backup)"
+    target_label  = "app"
+    replacement   = "picframe"
+  }
+
+  // Some environments expose the tag under __journal__syslog_identifier
+  rule {
+    source_labels = ["__journal__syslog_identifier"]
+    regex         = "(picframe|picframe-backup)"
+    target_label  = "app"
+    replacement   = "picframe"
+  }
+
+  // Also support systemd services: picframe.service / photo-sync.service
+  rule {
+    source_labels = ["__journal__systemd_unit"]
+    regex         = "(picframe|photo-sync)\\.service"
+    target_label  = "app"
+    replacement   = "picframe"
+  }
+
+  // Pass-through helpful journal metadata as labels
+  rule {
+    source_labels = ["__journal__systemd_unit"]
+    target_label  = "unit"
+  }
+
+  rule {
+    source_labels = ["__journal__boot_id"]
+    target_label  = "boot_id"
+  }
+
+  rule {
+    source_labels = ["__journal__transport"]
+    target_label  = "transport"
+  }
+
+  rule {
+    source_labels = ["__journal__hostname"]
+    target_label  = "instance"
+  }
+
+  rule {
+    source_labels = ["__journal_priority_keyword"]
+    target_label  = "level"
+  }
+}
+
+// -------- Metrics pipeline (node) --------
+
+prometheus.exporter.unix "node" {
+  // Trim noisy collectors for small devices
+  disable_collectors = ["ipvs", "btrfs", "infiniband", "xfs", "zfs"]
+  enable_collectors  = ["meminfo"]
+
+  filesystem {
+    // Reasonable defaults to skip pseudo/virtual FS
+    fs_types_exclude     = "^(autofs|binfmt_misc|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|overlay|proc|pstore|rpc_pipefs|securityfs|selinuxfs|sysfs|tracefs)$"
+    mount_points_exclude = "^/(dev|proc|sys|run|var/lib/docker/.+|var/lib/containers/.+)($|/)"
+    mount_timeout        = "5s"
+  }
+
+  netclass {
+    ignored_devices = "^(veth.*|cali.*|[a-f0-9]{15})$"
+  }
+
+  netdev {
+    device_exclude = "^(veth.*|cali.*|[a-f0-9]{15})$"
+  }
+}
+
+discovery.relabel "metrics_relabel" {
+  targets = prometheus.exporter.unix.node.targets
+
+  rule {
+    target_label = "job"
+    replacement  = "linux_node"
+  }
+}
+
+prometheus.scrape "node" {
+  scrape_interval = "15s"
+  targets    = discovery.relabel.metrics_relabel.output
+  forward_to = [prometheus.remote_write.local.receiver]
+}
+
+prometheus.remote_write "local" {
+  endpoint {
+    url = "${PROMETHEUS_URL}"
+  }
+}
