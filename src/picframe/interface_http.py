@@ -172,7 +172,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             serve_static = (
                 not parsed_url.query
                 or html_page in ("current_image", "current_image_original")
-                or extension in [".html", ".js", ".css"]
+                or (request_path != "/" and extension in [".html", ".js", ".css"])
             )
             if serve_static:
                 if request_path != "/":  # serve static page from html_path...
