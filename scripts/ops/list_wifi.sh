@@ -85,9 +85,23 @@ fi
 
 # --- rows --------------------------------------------------------------------
 # Pad value FIRST, then wrap with color — otherwise the escape sequence
-# bytes count toward %-10s width and alignment breaks.
+# bytes count toward %-Ns width and alignment breaks.
+#
+# Show real SSID (802-11-wireless.ssid) instead of the NM profile NAME.
+# Profile names diverge from SSIDs when netplan renders them, e.g.
+# SSID `R2D2` -> profile `netplan-wlan0-R2D2`. When they differ, append
+# a dim "(profile: ...)" hint so the origin is still visible.
 while IFS='|' read -r NAME AUTOCONNECT; do
     [ -z "$NAME" ] && continue
+
+    SSID=$(nmcli -g 802-11-wireless.ssid connection show "$NAME" 2>/dev/null || true)
+    [ -z "$SSID" ] && SSID="$NAME"
+
+    if [ "$SSID" != "$NAME" ]; then
+        PROFILE_HINT="${DIM}(profile: ${NAME})${RESET}"
+    else
+        PROFILE_HINT=""
+    fi
 
     if [ "$NAME" = "$ACTIVE_WIFI" ]; then
         ACTIVE_VAL="yes"; ACTIVE_COLOR="$GREEN"
@@ -103,6 +117,7 @@ while IFS='|' read -r NAME AUTOCONNECT; do
 
     AC_CELL=$(printf '%-11s' "$AC_VAL")
     ACTIVE_CELL=$(printf '%-10s' "$ACTIVE_VAL")
+    SSID_CELL=$(printf '%-28s' "$SSID")
 
     if [ "$SHOW_PASSWORDS" -eq 1 ]; then
         # `-s` asks nmcli to include secrets (PSK). Needs root.
@@ -113,16 +128,18 @@ while IFS='|' read -r NAME AUTOCONNECT; do
         else
             PSK_OUT="$PSK"
         fi
-        printf '  %-28s %s%s%s %s%s%s %s\n' \
-            "$NAME" \
+        printf '  %s %s%s%s %s%s%s %-20s %s\n' \
+            "$SSID_CELL" \
             "$AC_COLOR" "$AC_CELL" "$RESET" \
             "$ACTIVE_COLOR" "$ACTIVE_CELL" "$RESET" \
-            "$PSK_OUT"
+            "$PSK_OUT" \
+            "$PROFILE_HINT"
     else
-        printf '  %-28s %s%s%s %s%s%s\n' \
-            "$NAME" \
+        printf '  %s %s%s%s %s%s%s %s\n' \
+            "$SSID_CELL" \
             "$AC_COLOR" "$AC_CELL" "$RESET" \
-            "$ACTIVE_COLOR" "$ACTIVE_CELL" "$RESET"
+            "$ACTIVE_COLOR" "$ACTIVE_CELL" "$RESET" \
+            "$PROFILE_HINT"
     fi
 done <<< "$PROFILES"
 
