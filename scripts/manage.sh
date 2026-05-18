@@ -31,18 +31,22 @@ ${BOLD}${CYAN}picframe · manage${RESET}
 Usage: $(basename "$0") <command> [args]
 
 Commands:
-  ${BOLD}sync-photos${RESET} [instance]   Trigger photo sync now via systemd
+  ${BOLD}sync-photos${RESET} [instance]   Run photo sync now (streams rclone output)
                           instance: ${ALLOWED_INSTANCES[*]}
                           If omitted, auto-detect from this frame's crontab.
   ${BOLD}list-wifi${RESET} [-s]           List saved WiFi profiles (-s reveals passwords)
   ${BOLD}add-wifi${RESET}                 Save a new WiFi profile (interactive)
-  ${BOLD}help${RESET}                     Show this message
+  ${BOLD}completion${RESET} <bash|fish>          Print shell completion script
+  ${BOLD}install-completion${RESET} [bash|fish]   Install completion into your rc / fish dir
+                                  (auto-detects shell from \$SHELL if omitted)
+  ${BOLD}help${RESET}                            Show this message
 
 Examples:
   $(basename "$0") sync-photos
   $(basename "$0") sync-photos batanovs
   $(basename "$0") list-wifi -s
   $(basename "$0") add-wifi
+  $(basename "$0") install-completion
 EOF
 }
 
@@ -80,12 +84,128 @@ cmd_sync_photos() {
     info "Using instance: ${BOLD}${instance}${RESET}"
   fi
 
-  local unit="photo-sync@${instance}.service"
-  heading "Starting ${unit}"
-  sudo systemctl start "${unit}"
-  ok "Started"
-  hint "Tail logs with: journalctl -u ${unit} -f"
+  local script="${SCRIPT_DIR}/runtime/sync_photos_from_nasik.sh"
+  [[ -x "$script" ]] || die "missing or not executable: ${script}"
+
+  heading "Syncing photos · ${instance}"
+  hint "(equivalent to: sudo systemctl start photo-sync@${instance})"
   echo
+  exec "$script" "$instance"
+}
+
+cmd_completion() {
+  local shell="${1:-}"
+  case "$shell" in
+    bash) print_bash_completion ;;
+    fish) print_fish_completion ;;
+    "")   die "specify a shell: bash | fish" ;;
+    *)    die "unsupported shell '${shell}'. Supported: bash | fish" ;;
+  esac
+}
+
+print_bash_completion() {
+  cat <<'EOF'
+_picframe_manage_complete() {
+  local cur sub
+  cur="${COMP_WORDS[COMP_CWORD]}"
+  sub="${COMP_WORDS[1]:-}"
+
+  if [ "$COMP_CWORD" -eq 1 ]; then
+    COMPREPLY=( $(compgen -W "sync-photos list-wifi add-wifi completion install-completion help" -- "$cur") )
+    return
+  fi
+
+  case "$sub" in
+    sync-photos)
+      [ "$COMP_CWORD" -eq 2 ] && \
+        COMPREPLY=( $(compgen -W "home batanovs cherednychoks" -- "$cur") )
+      ;;
+    list-wifi)
+      [ "$COMP_CWORD" -eq 2 ] && \
+        COMPREPLY=( $(compgen -W "-s --show-passwords" -- "$cur") )
+      ;;
+    completion|install-completion)
+      [ "$COMP_CWORD" -eq 2 ] && \
+        COMPREPLY=( $(compgen -W "bash fish" -- "$cur") )
+      ;;
+  esac
+}
+complete -F _picframe_manage_complete manage.sh
+complete -F _picframe_manage_complete ./manage.sh
+EOF
+}
+
+cmd_install_completion() {
+  local shell="${1:-}"
+
+  if [[ -z "$shell" ]]; then
+    case "${SHELL:-}" in
+      */bash) shell=bash ;;
+      */fish) shell=fish ;;
+      "")     die "could not detect shell from \$SHELL. Pass one explicitly: bash | fish" ;;
+      *)      die "unsupported login shell '${SHELL}'. Pass one explicitly: bash | fish" ;;
+    esac
+    info "Detected shell: ${BOLD}${shell}${RESET}"
+  fi
+
+  local script_abs="${SCRIPT_DIR}/$(basename "${BASH_SOURCE[0]}")"
+
+  case "$shell" in
+    bash) install_bash_completion "$script_abs" ;;
+    fish) install_fish_completion "$script_abs" ;;
+    *)    die "unsupported shell '${shell}'. Supported: bash | fish" ;;
+  esac
+}
+
+install_bash_completion() {
+  local script_abs="$1"
+  local rc="${HOME}/.bashrc"
+  local marker="# picframe manage.sh completion"
+
+  if [[ -f "$rc" ]] && grep -Fq "$marker" "$rc"; then
+    ok "Already installed in ${rc}"
+    hint "Remove the '${marker}' block to uninstall."
+    return 0
+  fi
+
+  {
+    printf '\n%s\n' "$marker"
+    printf 'source <("%s" completion bash)\n' "$script_abs"
+  } >> "$rc"
+
+  ok "Added completion to ${rc}"
+  hint "Open a new shell, or run: source ${rc}"
+}
+
+install_fish_completion() {
+  local script_abs="$1"
+  local dir="${HOME}/.config/fish/completions"
+  local file="${dir}/manage.sh.fish"
+
+  mkdir -p "$dir"
+  "$script_abs" completion fish > "$file"
+
+  ok "Wrote ${file}"
+  hint "Fish auto-loads on next shell. To refresh now: source ${file}"
+}
+
+print_fish_completion() {
+  cat <<'EOF'
+# picframe manage.sh — fish completion
+complete -c manage.sh -f
+complete -c manage.sh -n '__fish_use_subcommand' -a sync-photos -d 'Run photo sync now'
+complete -c manage.sh -n '__fish_use_subcommand' -a list-wifi   -d 'List saved WiFi profiles'
+complete -c manage.sh -n '__fish_use_subcommand' -a add-wifi    -d 'Save a new WiFi profile'
+complete -c manage.sh -n '__fish_use_subcommand' -a completion         -d 'Print shell completion'
+complete -c manage.sh -n '__fish_use_subcommand' -a install-completion -d 'Install shell completion'
+complete -c manage.sh -n '__fish_use_subcommand' -a help               -d 'Show help'
+complete -c manage.sh -n '__fish_seen_subcommand_from sync-photos' \
+  -a 'home batanovs cherednychoks'
+complete -c manage.sh -n '__fish_seen_subcommand_from list-wifi' \
+  -a '-s --show-passwords'
+complete -c manage.sh -n '__fish_seen_subcommand_from completion install-completion' \
+  -a 'bash fish'
+EOF
 }
 
 cmd_list_wifi() {
@@ -107,6 +227,8 @@ main() {
     sync-photos)        cmd_sync_photos "$@" ;;
     list-wifi)          cmd_list_wifi   "$@" ;;
     add-wifi)           cmd_add_wifi    "$@" ;;
+    completion)         cmd_completion         "$@" ;;
+    install-completion) cmd_install_completion "$@" ;;
     help|-h|--help)     usage ;;
     *) printf '%s✗ Unknown command:%s %s\n\n' "$RED" "$RESET" "$cmd" >&2; usage; exit 1 ;;
   esac
