@@ -168,3 +168,19 @@ match the layout produced by `install/2_install_picframe.sh` (user `ivan`,
 **Rule of thumb:** whenever a change touches `pyproject.toml`, frames must be
 updated via this script (or an equivalent `pip install -e .`), not just
 `git pull`.
+
+
+## Applied fixes flow
+
+Every fix we do for the scripts or picframe code should consider that some picframe are already deployed so it may require upgrade script created and updated in current installation/migration scripts to include the fix in new deployments. Also notable fixes needs to be loged in docs
+
+## Running git commands
+
+The repo root is one level down from the working directory
+(`picframe-custom/picframe/`). `cd` into the repo first, then run plain git
+commands (`git status`, `git diff`, `git log`, …) rather than the
+`git -C <path> …` form. The user's `~/.claude/settings.json` auto-approves
+read-only git subcommands by name (`git status:*`, `git diff:*`, etc.), but
+those rules are prefix-only and do not match the `-C` form, so using `-C`
+re-triggers a permission prompt on every call. One `cd` per session
+eliminates that friction.

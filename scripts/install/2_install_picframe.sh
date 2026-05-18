@@ -450,8 +450,19 @@ EOL
 Description=PictureFrame on Pi
 
 [Service]
+# Wipe any stale Wayland socket left behind by a crashed labwc.
+# Without this, a SIGSEGV in labwc leaves /run/user/<UID>/wayland-0 on disk;
+# the next labwc start mistakes itself for a nested Wayland client and exits 1.
+# %t expands to XDG_RUNTIME_DIR (/run/user/<UID>) for user units.
+ExecStartPre=/bin/rm -f %t/wayland-0 %t/wayland-0.lock
 ExecStart=/usr/bin/labwc
 Restart=always
+# Pace restarts so a transient failure isn't punished by the default burst
+# limit (5 starts in 10s with no delay), which is what locked us out in the
+# 2026-05-17 incident.
+RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=3
 
 [Install]
 WantedBy=default.target
@@ -461,6 +472,19 @@ EOL
     # Enable the user systemd service for autostart
     su - $INSTALL_USER -c "systemctl --user enable picframe.service"
     log_message "Enabled systemd user service for Picframe autostart."
+
+    # Disable WiFi powersave globally via NetworkManager so all SSIDs (current
+    # and any added later via add_wifi.sh) inherit powersave=off. The frame's
+    # wlan0 otherwise self-disconnects every ~60s, causing repeated MQTT drops.
+    # NM enum: 2 = disabled, 3 = enabled.
+    NM_POWERSAVE_FILE="/etc/NetworkManager/conf.d/wifi-powersave-off.conf"
+    sudo mkdir -p /etc/NetworkManager/conf.d
+    sudo tee "$NM_POWERSAVE_FILE" > /dev/null <<'EOL'
+# Managed by picframe install. Disables wifi powersave for all connections.
+[connection]
+wifi.powersave = 2
+EOL
+    log_message "Wrote NetworkManager wifi-powersave override: $NM_POWERSAVE_FILE"
 
     # Mark step as completed and reboot to apply changes
     log_message "Autostart configuration for Picframe completed. Rebooting to apply changes."
