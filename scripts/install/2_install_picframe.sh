@@ -171,6 +171,21 @@ if [ "$LAST_COMPLETED_STEP" -lt 1 ]; then
     check_internet_connection
     log_message "Step 1: Updating operating system..."
     sudo apt-get update && sudo apt upgrade -y
+
+    # Generate en_GB.UTF-8 and set it as the system default. Without this,
+    # bash/perl/apt all emit "setlocale: cannot change locale" warnings because
+    # macOS ssh clients forward LC_CTYPE=UTF-8 (bare "UTF-8" is not a valid
+    # locale name). Setting LC_ALL — not just LANG — gives the system default
+    # higher priority than the forwarded LC_CTYPE, silencing the warnings.
+    log_message "Generating en_GB.UTF-8 locale and setting it as default..."
+    if grep -qE '^# *en_GB\.UTF-8 UTF-8' /etc/locale.gen; then
+        sudo sed -i 's/^# *en_GB\.UTF-8 UTF-8/en_GB.UTF-8 UTF-8/' /etc/locale.gen
+    elif ! grep -qE '^en_GB\.UTF-8 UTF-8' /etc/locale.gen; then
+        echo "en_GB.UTF-8 UTF-8" | sudo tee -a /etc/locale.gen > /dev/null
+    fi
+    sudo locale-gen en_GB.UTF-8 >/dev/null
+    sudo update-locale LANG=en_GB.UTF-8 LC_ALL=en_GB.UTF-8
+
     reboot_and_resume 1
 fi
 

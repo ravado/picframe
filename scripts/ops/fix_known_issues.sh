@@ -162,6 +162,43 @@ else
 fi
 
 # =============================================================================
+# Fix 4 · locale
+# =============================================================================
+# Bookworm images often ship with /etc/locale.gen having every locale commented
+# out and /etc/default/locale empty. Combined with macOS SSH clients that
+# forward LC_CTYPE=UTF-8 (bare "UTF-8" is not a valid locale name), this
+# produces "setlocale: cannot change locale" warnings on every login and from
+# perl/apt postinst scripts.
+#
+# Fix: generate en_GB.UTF-8 and set it as the system default. Setting LC_ALL
+# (not just LANG) makes it the top-priority value, so the SSH-forwarded
+# LC_CTYPE=UTF-8 is overridden and the warnings stop.
+section "4. locale"
+
+LOCALE_TARGET="en_GB.UTF-8"
+# locale -a normalizes to "en_GB.utf8" (no dot/dash, lower-case) — check for that.
+LOCALE_TARGET_NORMALIZED="en_GB.utf8"
+
+if locale -a 2>/dev/null | grep -qx "$LOCALE_TARGET_NORMALIZED" \
+    && grep -q "^LC_ALL=$LOCALE_TARGET" /etc/default/locale 2>/dev/null; then
+    skip "$LOCALE_TARGET already generated and set as LC_ALL."
+else
+    info "Generating $LOCALE_TARGET and setting it as system default."
+    # Uncomment the locale in /etc/locale.gen if it's there but commented.
+    if grep -qE "^# *$LOCALE_TARGET UTF-8" /etc/locale.gen; then
+        sudo sed -i "s/^# *$LOCALE_TARGET UTF-8/$LOCALE_TARGET UTF-8/" /etc/locale.gen
+    elif ! grep -qE "^$LOCALE_TARGET UTF-8" /etc/locale.gen; then
+        # Not present at all — append it.
+        echo "$LOCALE_TARGET UTF-8" | sudo tee -a /etc/locale.gen > /dev/null
+    fi
+    sudo locale-gen "$LOCALE_TARGET" >/dev/null
+    # LC_ALL outranks every LC_* — including the LC_CTYPE=UTF-8 that macOS
+    # ssh clients forward — so login warnings stop without touching sshd.
+    sudo update-locale LANG="$LOCALE_TARGET" LC_ALL="$LOCALE_TARGET"
+    ok "$LOCALE_TARGET generated. New SSH sessions will be clean."
+fi
+
+# =============================================================================
 # Summary
 # =============================================================================
 section "Summary"
