@@ -13,9 +13,10 @@ ALLOWED_INSTANCES=(home batanovs cherednychoks)
 # --- pretty output (no-op when not a TTY) ------------------------------------
 if [ -t 1 ]; then
   BOLD=$'\033[1m'; DIM=$'\033[2m'; RESET=$'\033[0m'
-  CYAN=$'\033[38;5;39m'; GREEN=$'\033[38;5;42m'; RED=$'\033[38;5;203m'
+  CYAN=$'\033[38;5;39m'; GREEN=$'\033[38;5;42m'
+  YELLOW=$'\033[38;5;214m'; RED=$'\033[38;5;203m'
 else
-  BOLD=""; DIM=""; RESET=""; CYAN=""; GREEN=""; RED=""
+  BOLD=""; DIM=""; RESET=""; CYAN=""; GREEN=""; YELLOW=""; RED=""
 fi
 
 heading() { printf '\n%s%s%s\n\n' "$BOLD$CYAN" "$*" "$RESET"; }
@@ -55,25 +56,58 @@ is_allowed_instance() {
   [[ " ${ALLOWED_INSTANCES[*]} " == *" ${candidate} "* ]]
 }
 
-# Detect which instance this frame is configured for by reading the cron line
-# written by install/5_configure_photo_sync.sh:
-#   0 0 * * * sudo /bin/systemctl start photo-sync@<instance>
-detect_instance() {
+# Detection sources, in order of trust:
+#   1. hostname — substring match against ALLOWED_INSTANCES
+#   2. crontab line written by install/5_configure_photo_sync.sh
+# Each prints just the instance name on success; sets DETECTED_VIA for the caller.
+DETECTED_VIA=""
+
+detect_from_hostname() {
+  local host
+  host="$(hostname 2>/dev/null | tr '[:upper:]' '[:lower:]')" || return 1
+  [[ -z "$host" ]] && return 1
+  local inst
+  for inst in "${ALLOWED_INSTANCES[@]}"; do
+    if [[ "$host" == *"$inst"* ]]; then
+      DETECTED_VIA="hostname '$host'"
+      echo "$inst"
+      return 0
+    fi
+  done
+  return 1
+}
+
+detect_from_crontab() {
   local line
   line="$(crontab -l 2>/dev/null | grep -E 'photo-sync@[a-z]+' | head -n1 || true)"
   [[ -z "$line" ]] && return 1
   local found
   found="$(echo "$line" | sed -E 's/.*photo-sync@([a-z]+).*/\1/')"
   is_allowed_instance "$found" || return 1
+  DETECTED_VIA="crontab"
   echo "$found"
+}
+
+detect_instance() {
+  detect_from_hostname || detect_from_crontab
 }
 
 cmd_sync_photos() {
   local instance="${1:-}"
+  local detected=""
+  detected="$(detect_instance || true)"
+
+  # Always report what auto-detect saw — useful for verifying detection
+  # signals on a real frame, even when an explicit arg agrees.
+  if [[ -n "$detected" ]]; then
+    info "Auto-detect: ${BOLD}${detected}${RESET} (via ${DETECTED_VIA})"
+  else
+    info "Auto-detect: ${DIM}no signal${RESET} (hostname=$(hostname 2>/dev/null || echo '?'), no photo-sync@ in crontab)"
+  fi
 
   if [[ -z "$instance" ]]; then
-    if instance="$(detect_instance)"; then
-      info "Detected instance from crontab: ${BOLD}${instance}${RESET}"
+    if [[ -n "$detected" ]]; then
+      instance="$detected"
     else
       die "could not auto-detect instance. Pass one explicitly: ${ALLOWED_INSTANCES[*]}"
     fi
@@ -81,7 +115,22 @@ cmd_sync_photos() {
     instance="$(echo "$instance" | tr '[:upper:]' '[:lower:]')"
     is_allowed_instance "$instance" \
       || die "unknown instance '${instance}'. Allowed: ${ALLOWED_INSTANCES[*]}"
-    info "Using instance: ${BOLD}${instance}${RESET}"
+
+    if [[ -n "$detected" && "$detected" != "$instance" ]]; then
+      printf '\n  %s⚠ Frame mismatch%s\n' "$YELLOW" "$RESET"
+      printf '    This frame appears to be %s%s%s (via %s)\n' \
+        "$BOLD" "$detected" "$RESET" "$DETECTED_VIA"
+      printf '    You asked to sync   %s%s%s\n\n' \
+        "$BOLD" "$instance" "$RESET"
+      printf '    Proceeding will replace %s~/Pictures/PhotoFrame%s with the %s%s%s photo set.\n' \
+        "$DIM" "$RESET" "$BOLD" "$instance" "$RESET"
+      printf '    Continue? [y/N] '
+      local reply=""
+      read -r reply </dev/tty || reply=""
+      [[ "$reply" == "y" || "$reply" == "Y" ]] || die "aborted"
+    else
+      info "Using instance: ${BOLD}${instance}${RESET}"
+    fi
   fi
 
   local script="${SCRIPT_DIR}/runtime/sync_photos_from_nasik.sh"
