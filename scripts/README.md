@@ -26,8 +26,9 @@ cron (00:00 daily)
 ```
 
 That is the **entire** runtime chain. The display on/off schedule is handled
-by `curl http://localhost:9000/?display_is_on=…` cron lines, not by any
-script in this folder.
+by `curl http://localhost:9000/?display_is_on=…` cron lines, with
+`ops/monitor_safety_on_boot.sh` as an `@reboot` safety net so a power-cut
+reboot in the middle of the off window doesn't leave the screen on.
 
 ## Script index
 
@@ -35,6 +36,7 @@ script in this folder.
 |---|---|---|
 | `runtime/sync_photos_from_nasik.sh` | rclone sync NAS → `~/Pictures/PhotoFrame` | `photo-sync@.service` + `photo-sync.service` (daily cron) |
 | `ops/update.sh` | `git pull` + `pip install -e .` + restart `picframe.service` | manual on each frame |
+| `ops/monitor_safety_on_boot.sh` | `@reboot` safety net: figure out desired display state from per-frame schedule, wait for picframe HTTP, then `curl …?display_is_on=…` | `@reboot` cron line on each frame |
 | `update_web_ui.sh` | sync redesigned web UI from `src/picframe/html/` → runtime `~/picframe_data/html/` (diff first, `--force`/`--check` flags) | manual, after web UI changes |
 | `ops/check_date_range_files.py` | list/find photos in a date window | manual |
 | `ops/compare_missing_files.sh` | diff two photo directories | manual |
@@ -101,8 +103,6 @@ Each script in there was found dead by audit:
 - `resize_new_photos.sh`, `resize_new_photos_lxc.sh`, `remove_missing_photos.sh`
   — hardcode `/home/ivan.cherednychok/...`; that user does not exist on
   current frames (they run as `ivan`).
-- `monitor_control.sh` — uses `vcgencmd` and `xset dpms`; both are X11/firmware
-  paths that do nothing on Wayland (PiOS Trixie default).
 - `prepare_ubuntu_vm_for_picframe.sh` — VM-only.
 - `clapper_app.py`, `multiclapper.py`, `mqtt_open_next_photo.py`,
   `read_all_photos_from_google_photos.py`, `get_exif_data_from_photo.py`,

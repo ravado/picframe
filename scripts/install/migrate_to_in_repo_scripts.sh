@@ -219,6 +219,23 @@ done
 [ "$stale_dir_remains" -eq 0 ] && echo "✅ No remaining crontab references to $OLD_SCRIPTS_DIR"
 
 ###########################
+# 4.5) Remind about the @reboot monitor-safety line
+###########################
+NEW_SAFETY_PATH="$REPO_PATH/scripts/ops/monitor_safety_on_boot.sh"
+MONITOR_SAFETY_INSTANCE="$(detect_instance || true)"
+SAFETY_FRAME_ARG="${MONITOR_SAFETY_INSTANCE:-<home|batanovs|cherednychoks>}"
+
+if [ -x "$NEW_SAFETY_PATH" ]; then
+  echo
+  echo "🛟 Add this @reboot line to ${PICFRAME_USER}'s crontab as the Wayland-safe"
+  echo "   replacement for the old monitor_control.sh safety net:"
+  echo
+  echo "   @reboot $NEW_SAFETY_PATH $SAFETY_FRAME_ARG >> $RUN_HOME/picframe_data/cron_log.txt 2>&1"
+  echo
+  echo "   Edit with: sudo crontab -u $PICFRAME_USER -e"
+fi
+
+###########################
 # 5) Offer to remove old folder
 ###########################
 echo
