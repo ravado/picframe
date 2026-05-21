@@ -134,8 +134,10 @@ start.py  ->  Model (config, DB, files)
 
 ### Weighted Shuffle (`image_cache.py`)
 - Replaces upstream's `displayed_count ASC, RANDOM()` bucketed sort with weighted random sampling without replacement
-- Favors under-shown photos (count) and modestly older photos (age); preserves `recent_n` and `portrait_pairs`
-- Tunables: `SHUFFLE_COUNT_ALPHA`, `SHUFFLE_AGE_BONUS` (module constants, not config)
+- Favors under-shown photos (count) and modestly older photos (age); cooldown deprioritizes recently-shown photos for ~48h
+- Preserves `recent_n` and `portrait_pairs`
+- DB schema v5 exposes `last_displayed` in the `all_data` view (auto-migrates on next startup)
+- Tunables: `SHUFFLE_COUNT_ALPHA`, `SHUFFLE_AGE_BONUS`, `SHUFFLE_COOLDOWN_HOURS` (module constants, not config)
 - See [`docs/shuffle-behavior.md`](docs/shuffle-behavior.md) for full design & math
 
 ## Key Patterns

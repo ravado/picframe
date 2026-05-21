@@ -10,6 +10,8 @@ from picframe.video_streamer import VIDEO_EXTENSIONS, get_video_info
 
 SHUFFLE_COUNT_ALPHA = 1.5
 SHUFFLE_AGE_BONUS = 0.3
+SHUFFLE_COOLDOWN_HOURS = 48
+SHUFFLE_COOLDOWN_SECONDS = SHUFFLE_COOLDOWN_HOURS * 3600
 
 
 def _row_value(row, key, default=None):
@@ -20,6 +22,7 @@ def _weighted_shuffle_partition(rows):
     if not rows:
         return []
 
+    now = time.time()
     last_modified_values = [float(_row_value(row, "last_modified", 0.0)) for row in rows]
     newest = max(last_modified_values)
     oldest = min(last_modified_values)
@@ -37,7 +40,20 @@ def _weighted_shuffle_partition(rows):
         else:
             age_position = 0.0
         age_weight = 1.0 + (SHUFFLE_AGE_BONUS * age_position)
-        total_weight = count_weight * age_weight
+
+        # Cooldown: a photo shown moments ago gets a near-zero weight, ramping
+        # back to 1.0 over SHUFFLE_COOLDOWN_HOURS. Never-shown photos
+        # (last_displayed == 0) get full weight immediately.
+        last_displayed = float(_row_value(row, "last_displayed", 0.0))
+        if last_displayed <= 0:
+            cooldown = 1.0
+        else:
+            seconds_since = max(0.0, now - last_displayed)
+            cooldown = min(1.0, seconds_since / SHUFFLE_COOLDOWN_SECONDS)
+
+        # Floor total_weight so a just-shown photo can still be selected if it
+        # is the only candidate, without causing a divide-by-zero in priority.
+        total_weight = max(count_weight * age_weight * cooldown, 1e-9)
 
         # Draw an exponential race priority so the final sorted order is random,
         # but rows with higher weights tend to appear earlier in the playlist.
@@ -98,7 +114,7 @@ class ImageCache:
         self.__db = self.__create_open_db(self.__db_file)
         self.__db_write_lock = threading.Lock()  # lock to serialize db writes between threads
         # NB this is where the required schema is set
-        self.__update_schema(4)
+        self.__update_schema(5)
 
         self.__keep_looping = True
         self.__pause_looping = False
@@ -209,7 +225,7 @@ class ImageCache:
         cursor = self.__db.cursor()
         cursor.row_factory = sqlite3.Row
         try:
-            sql = """SELECT file_id, displayed_count, last_modified, is_portrait
+            sql = """SELECT file_id, displayed_count, last_modified, last_displayed, is_portrait
                 FROM all_data WHERE {0}
                 """.format(where_clause)
             rows = cursor.execute(sql).fetchall()
@@ -456,6 +472,31 @@ class ImageCache:
                         folder.name || "/" || file.basename || "." || file.extension AS fname,
                         file.last_modified,
                         file.displayed_count,
+                        meta.*,
+                        meta.height > meta.width as is_portrait,
+                        location.description as location
+                    FROM file
+                        INNER JOIN folder
+                            ON folder.folder_id = file.folder_id
+                        LEFT JOIN meta
+                            ON file.file_id = meta.file_id
+                        LEFT JOIN location
+                            ON location.latitude = meta.latitude AND location.longitude = meta.longitude
+                    WHERE folder.missing = 0
+                """)
+
+            if schema_version <= 4:
+                # Migrate to db schema v5
+                # Expose last_displayed in the all_data view so the weighted shuffle can apply a cooldown
+                self.__db.execute("DROP VIEW all_data")
+                self.__db.execute("""
+                    CREATE VIEW IF NOT EXISTS all_data
+                    AS
+                    SELECT
+                        folder.name || "/" || file.basename || "." || file.extension AS fname,
+                        file.last_modified,
+                        file.displayed_count,
+                        file.last_displayed,
                         meta.*,
                         meta.height > meta.width as is_portrait,
                         location.description as location

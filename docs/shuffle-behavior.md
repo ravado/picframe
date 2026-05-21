@@ -12,6 +12,9 @@ It does this by giving every photo a "weight":
 - Photos that are **older** get a small extra nudge.
 - Photos that are **recent** are still shown before older ones (the existing
   "recent first" rule didn't change).
+- Photos shown **very recently** (in the last couple of days) get a sharply
+  reduced weight — a "cooldown" — so the same photo doesn't keep popping up
+  across back-to-back playlists.
 
 Then it shuffles using those weights. Heavier photos are more likely to land
 near the front of the playlist, but every photo could in theory show up
@@ -81,12 +84,16 @@ Defined in `src/picframe/image_cache.py:208`. Pulls just the columns the
 weighting needs:
 
 ```sql
-SELECT file_id, displayed_count, last_modified, is_portrait
+SELECT file_id, displayed_count, last_modified, last_displayed, is_portrait
 FROM all_data WHERE {where_clause}
 ```
 
 Then hands the raw rows to `weighted_shuffle_rows()`. No `ORDER BY` is used
 for shuffle — ordering is computed in Python.
+
+`last_displayed` was exposed in the `all_data` view via DB schema v5
+(migration in `image_cache.py:__update_schema`). Older deployed frames
+auto-migrate on next startup; no manual step needed.
 
 ### Recent partitioning: `weighted_shuffle_rows()`
 
@@ -112,8 +119,9 @@ priority assignment.
 Constants at the top of `image_cache.py`:
 
 ```python
-SHUFFLE_COUNT_ALPHA = 1.5   # how hard low displayed_count is favored
-SHUFFLE_AGE_BONUS   = 0.3   # max age boost (within a partition)
+SHUFFLE_COUNT_ALPHA      = 1.5   # how hard low displayed_count is favored
+SHUFFLE_AGE_BONUS        = 0.3   # max age boost (within a partition)
+SHUFFLE_COOLDOWN_HOURS   = 48    # how long after a photo is shown until it can recover full weight
 ```
 
 Per-row math:
@@ -122,15 +130,27 @@ Per-row math:
 count_weight = 1.0 / (displayed_count + 1) ** 1.5
 age_position = (newest_in_partition - last_modified) / age_span   # 0..1
 age_weight   = 1.0 + 0.3 * age_position
-total_weight = count_weight * age_weight
+
+# Cooldown: full weight (1.0) for never-shown photos; otherwise ramps from 0
+# at last_displayed to 1.0 after SHUFFLE_COOLDOWN_HOURS.
+if last_displayed <= 0:
+    cooldown = 1.0
+else:
+    cooldown = min(1.0, (now - last_displayed) / (SHUFFLE_COOLDOWN_HOURS * 3600))
+
+total_weight = max(count_weight * age_weight * cooldown, 1e-9)
 priority     = -log(max(random(), 1e-12)) / total_weight
 ```
+
+The `1e-9` floor on `total_weight` exists so that a just-shown photo with
+cooldown ≈ 0 can still in principle be picked if it is the only candidate,
+without causing a divide-by-zero in `priority`.
 
 Then `rows.sort(key=priority)` ascending. This is mathematically equivalent
 to weighted sampling without replacement — every row could end up anywhere,
 but higher-weight rows tend to land earlier.
 
-Effective weight examples (count axis, ignoring age):
+Effective weight examples (count axis, ignoring age and cooldown):
 
 | `displayed_count` | `count_weight` |
 |-------------------|----------------|
@@ -143,6 +163,21 @@ So a never-shown photo is roughly **3× more likely** to appear early than a
 once-shown photo, and **~37× more likely** than a photo shown 10 times.
 Count clearly dominates; age only adds up to 30% on top of that, and only
 relative to the oldest photo *within the same partition*.
+
+Cooldown examples (cooldown axis, with `SHUFFLE_COOLDOWN_HOURS = 48`):
+
+| time since last shown | `cooldown` |
+|-----------------------|------------|
+| never (`last_displayed == 0`) | 1.00 |
+| 1 minute  | ~0.0003 |
+| 1 hour    | ~0.021 |
+| 12 hours  | 0.25 |
+| 24 hours  | 0.50 |
+| 48 hours+ | 1.00 |
+
+Cooldown multiplies the weight, so a photo shown an hour ago is ~50×
+less likely to appear early than its own normal weight would suggest. The
+ramp is linear over `SHUFFLE_COOLDOWN_HOURS` so the effect fades smoothly.
 
 Why age is partition-normalized: if age were normalized globally, the oldest
 photo in the "recent" partition would still be 11 months old vs. 5-year-old
@@ -195,13 +230,15 @@ For reference, what was deliberately **not** changed:
 
 ### Tunable constants
 
-If a frame's library skews heavily in one direction, the two constants in
-`image_cache.py:11-12` are the only knobs:
+If a frame's library skews heavily in one direction, the three constants
+at the top of `image_cache.py` are the only knobs:
 
 - `SHUFFLE_COUNT_ALPHA = 1.5` — raise to favor under-shown photos harder,
   lower to flatten toward uniform random.
 - `SHUFFLE_AGE_BONUS = 0.3` — raise to surface old photos more aggressively
   (capped because age is meant to be a nudge, not the dominant signal).
+- `SHUFFLE_COOLDOWN_HOURS = 48` — raise to keep recently-shown photos out
+  of rotation longer, lower to recycle faster.
 
 These are intentionally **not** exposed in `configuration.yaml` per the
 task plan — no new user-facing tuning knobs in v1.
@@ -212,6 +249,8 @@ task plan — no new user-facing tuning knobs in v1.
 
 - Lower `displayed_count` shows up earlier on average.
 - Older photos are favored modestly when counts are equal.
+- A recently-shown photo (cooldown ≈ 0) is pushed to the back relative to
+  an otherwise-identical photo with no recent display.
 - High-count photos remain eligible (no filtering).
 - Recent partition stays ahead of older partition under `recent_n`.
 - `query_cache_shuffle()` returns correct tuple shapes for both
