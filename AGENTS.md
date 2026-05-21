@@ -3,6 +3,58 @@
 Custom fork of [helgeerbe/picframe](https://github.com/helgeerbe/picframe) via [ravado/picframe](https://github.com/ravado/picframe).
 Raspberry Pi-based digital picture frame with pi3d rendering, MQTT/Home Assistant integration, and HTTP config UI.
 
+---
+
+**Project:** Picframe Custom Fork
+**Goal:** Run a Pi-based digital photo frame with Home Assistant / MQTT integration and on-screen sensor overlays.
+**Audience:** Personal / single maintainer (Ivan) plus a small fleet of deployed frames on his network. Not a public product.
+
+## Stack
+
+Use these. Don't suggest alternatives unless I ask.
+
+- **Language:** Python ≥ 3.7 (real targets: 3.11–3.13 on Raspberry Pi OS, dev on macOS)
+- **Framework:** none — long-running CLI/daemon (`picframe.start:main`)
+- **Rendering:** pi3d ≥ 2.54 (OpenGL ES on the Pi)
+- **Package manager:** pip + `pyproject.toml` (editable install in `~/.venv_picframe` on frames)
+- **Config:** YAML (`picframe_data/config/configuration.yaml`) merged over `DEFAULT_CONFIG` in `model.py`
+- **Storage:** SQLite (file DB under `picframe_data/data/`) — no ORM
+- **Integrations:** MQTT via `paho-mqtt` ≥ 2.1 (Home Assistant auto-discovery); HTTP config UI via stdlib + Jinja2
+- **Hardware libs (optional extras):** `gpiod` (`[gpio]`), `adafruit-circuitpython-dht` + `adafruit-circuitpython-bme280` (`[sensors]`), grouped as `[hardware]`
+- **Testing:** none configured — `test/` directory is minimal; verify changes by running on a frame or with the fake GPIO controller
+- **Deploy target:** Raspberry Pi (Linux/ARM) running labwc; managed via `systemctl --user picframe.service`
+- **Log shipping:** fluent-bit (journal → Loki/Grafana). Not Alloy.
+
+## Permanent constraints
+
+Things that must always hold in this repo. Flag conflicts before proceeding.
+
+- **Non-Pi systems must not crash on import.** All hardware libs (`gpiod`, `board`, `busio`, `adafruit_*`) are imported lazily inside try/except, never at module top level.
+- **All hardware features must degrade silently** when libs or hardware are unavailable — never raise into the main loop.
+- **Every config key has a default** in `DEFAULT_CONFIG` (`model.py`). New keys without defaults break frames that haven't updated `configuration.yaml`.
+- **Config access goes through `model.get_*_config()`** — components receive a dict, never reach into `Model` for raw config.
+- **No new runtime dependencies without asking.** If a dep is hardware-only, it goes in `[project.optional-dependencies]`, not the base list.
+- **Touching `pyproject.toml` means deployed frames need `scripts/ops/update.sh`**, not just `git pull`. Call this out in the summary when it happens.
+- **Operational scripts live under `scripts/`** and are indexed by `scripts/README.md`. Read that file before adding/moving/deleting anything there.
+- **Plans and task docs live in `.claude/plans/`** — not scattered in the repo root.
+
+## Avoid
+
+- Module-level imports of hardware libraries (`gpiod`, `board`, `busio`, `adafruit_*`) — always lazy.
+- Adding new runtime dependencies without asking, or putting hardware-only deps in the base `dependencies` list.
+- Refactors, renames, or reformatting outside the file(s) the current task touches.
+- **Modifying upstream-inherited files unless necessary** — preserve merge-ability with `helgeerbe/picframe`. Custom features live in clearly-marked `[CUSTOM]` files; prefer extending those over editing upstream code.
+- Mocking the database in tests; running migrations, force-pushing, or anything irreversible without explicit confirmation in the current message.
+- Adding feature flags, abstractions, or "future-proofing" beyond what the task requires.
+
+## Memory
+
+- **`MEMORY.md`** (repo root): read at session start. Append entries for significant decisions — what was decided, why, what was rejected.
+- **`ERRORS.md`** (repo root): check before proposing approaches to similar problems. Append entries when a fix uncovers a non-obvious failure mode worth remembering.
+- Both files are git-tracked; keep entries terse (a few lines each, dated).
+
+---
+
 ## Repository Layout
 
 ```
@@ -79,6 +131,12 @@ start.py  ->  Model (config, DB, files)
 ### Geo Reverse Lookup (`geo_reverse.py`)
 - `GeoReverse` class using OpenStreetMap Nominatim API
 - Converts GPS coords to addresses with configurable zoom and key_list
+
+### Weighted Shuffle (`image_cache.py`)
+- Replaces upstream's `displayed_count ASC, RANDOM()` bucketed sort with weighted random sampling without replacement
+- Favors under-shown photos (count) and modestly older photos (age); preserves `recent_n` and `portrait_pairs`
+- Tunables: `SHUFFLE_COUNT_ALPHA`, `SHUFFLE_AGE_BONUS` (module constants, not config)
+- See [`docs/shuffle-behavior.md`](docs/shuffle-behavior.md) for full design & math
 
 ## Key Patterns
 
