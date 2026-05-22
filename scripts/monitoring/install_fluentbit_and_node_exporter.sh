@@ -81,6 +81,30 @@ detect_arch_node_exporter() {
   esac
 }
 
+# Write stdin to $1 only if content differs from what's already there.
+# Returns 0 if the file changed (or was created), 1 if it was already identical.
+# Usage:  cat <<EOF | write_if_changed /etc/foo
+write_if_changed() {
+  local target=$1
+  local tmp
+  tmp=$(mktemp)
+  cat > "$tmp"
+  if $SUDO test -f "$target" && $SUDO cmp -s "$tmp" "$target"; then
+    rm -f "$tmp"
+    return 1
+  fi
+  $SUDO install -m 644 "$tmp" "$target"
+  rm -f "$tmp"
+  return 0
+}
+
+# Read the Loki host out of an existing fluent-bit.conf, if any.
+detect_existing_loki_host() {
+  [ -f /etc/fluent-bit/fluent-bit.conf ] || return 0
+  $SUDO grep -E '^[[:space:]]*host[[:space:]]+' /etc/fluent-bit/fluent-bit.conf 2>/dev/null \
+    | head -1 | awk '{print $2}'
+}
+
 # =======================================================
 # PHASE 1: Interactive prompts
 # =======================================================
@@ -92,16 +116,27 @@ echo " (Lightweight replacement for Alloy)"
 echo "=========================================="
 echo ""
 
-while true; do
-  echo -e "${YELLOW}🌐 Enter your Loki host IP or domain (e.g. 192.168.91.10):${NC}"
-  read -r monitor_host
+existing_host=$(detect_existing_loki_host || true)
 
-  if [[ -z "$monitor_host" ]]; then
-    log_error "Host cannot be empty. Please try again."
-  else
-    break
-  fi
-done
+if [ -n "${LOKI_HOST:-}" ]; then
+  monitor_host="$LOKI_HOST"
+  log_info "Using Loki host from \$LOKI_HOST: $monitor_host"
+elif [ -n "$existing_host" ]; then
+  monitor_host="$existing_host"
+  log_info "Reusing Loki host from existing config: $monitor_host"
+  log_info "Override with LOKI_HOST=<ip> when re-running."
+else
+  while true; do
+    echo -e "${YELLOW}🌐 Enter your Loki host IP or domain (e.g. 192.168.91.10):${NC}"
+    read -r monitor_host
+
+    if [[ -z "$monitor_host" ]]; then
+      log_error "Host cannot be empty. Please try again."
+    else
+      break
+    fi
+  done
+fi
 
 LOKI_URL="http://${monitor_host}:${FLUENT_BIT_LOKI_PORT}"
 
@@ -162,7 +197,9 @@ log_step "Deploying Fluent Bit configuration..."
 $SUDO mkdir -p /etc/fluent-bit
 $SUDO mkdir -p /var/lib/fluent-bit
 
-$SUDO tee /etc/fluent-bit/fluent-bit.conf >/dev/null <<EOF
+fluent_bit_changed=0
+
+if cat <<EOF | write_if_changed /etc/fluent-bit/fluent-bit.conf
 [SERVICE]
     flush           5
     daemon          off
@@ -194,8 +231,14 @@ $SUDO tee /etc/fluent-bit/fluent-bit.conf >/dev/null <<EOF
     drop_single_key   on
     auto_kubernetes_labels off
 EOF
+then
+  fluent_bit_changed=1
+  log_info "fluent-bit.conf updated"
+else
+  log_info "fluent-bit.conf unchanged"
+fi
 
-$SUDO tee /etc/fluent-bit/loki-labels.lua >/dev/null <<'LUAEOF'
+if cat <<'LUAEOF' | write_if_changed /etc/fluent-bit/loki-labels.lua
 local priority_map = {
     ["0"] = "emerg",
     ["1"] = "alert",
@@ -270,8 +313,16 @@ function enrich(tag, timestamp, record)
     return 1, timestamp, clean
 end
 LUAEOF
+then
+  fluent_bit_changed=1
+  log_info "loki-labels.lua updated"
+else
+  log_info "loki-labels.lua unchanged"
+fi
 
-log_info "Fluent Bit configuration deployed"
+if [ "$fluent_bit_changed" = "0" ]; then
+  log_info "Fluent Bit configuration already up to date"
+fi
 
 # =======================================================
 # PHASE 4: Install Node Exporter
@@ -307,7 +358,9 @@ $SUDO chown -R nodeusr:nodeusr /opt/node_exporter
 
 log_step "Deploying Node Exporter service..."
 
-$SUDO tee /etc/systemd/system/node_exporter.service >/dev/null <<'EOF'
+node_exporter_changed=0
+
+if cat <<'EOF' | write_if_changed /etc/systemd/system/node_exporter.service
 [Unit]
 Description=Prometheus Node Exporter
 After=network.target
@@ -336,8 +389,12 @@ RestartSec=5
 [Install]
 WantedBy=multi-user.target
 EOF
-
-log_info "Node Exporter service configured"
+then
+  node_exporter_changed=1
+  log_info "node_exporter.service updated"
+else
+  log_info "node_exporter.service unchanged"
+fi
 
 # =======================================================
 # PHASE 6: Enable and start services
@@ -345,9 +402,30 @@ log_info "Node Exporter service configured"
 
 log_step "Starting services..."
 
-$SUDO systemctl daemon-reload
-$SUDO systemctl enable --now fluent-bit
-$SUDO systemctl enable --now node_exporter
+# Only daemon-reload if a unit file actually changed (node_exporter is the only
+# one this script owns; fluent-bit ships its own packaged unit).
+if [ "$node_exporter_changed" = "1" ]; then
+  $SUDO systemctl daemon-reload
+fi
+
+# Enable is always safe to call — idempotent.
+$SUDO systemctl enable fluent-bit >/dev/null 2>&1 || true
+$SUDO systemctl enable node_exporter >/dev/null 2>&1 || true
+
+# Restart only when config changed OR the unit is not currently active.
+if [ "$fluent_bit_changed" = "1" ] || ! $SUDO systemctl is-active --quiet fluent-bit; then
+  $SUDO systemctl restart fluent-bit
+  log_info "Fluent Bit (re)started"
+else
+  log_info "Fluent Bit already running with current config — no restart"
+fi
+
+if [ "$node_exporter_changed" = "1" ] || ! $SUDO systemctl is-active --quiet node_exporter; then
+  $SUDO systemctl restart node_exporter
+  log_info "Node Exporter (re)started"
+else
+  log_info "Node Exporter already running with current config — no restart"
+fi
 
 # =======================================================
 # PHASE 7: Verification
