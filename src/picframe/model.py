@@ -143,7 +143,7 @@ class Pic:  # TODO could this be done more elegantly with namedtuple
                  f_number=0, exposure_time=None, iso=0, focal_length=None,
                  make=None, model=None, lens=None, rating=None, latitude=None,
                  longitude=None, width=0, height=0, is_portrait=0, location=None, title=None,
-                 caption=None, tags=None, displayed_count=0):
+                 caption=None, tags=None, displayed_count=0, last_displayed=0):
         self.fname = fname
         self.last_modified = last_modified
         self.file_id = file_id
@@ -167,6 +167,7 @@ class Pic:  # TODO could this be done more elegantly with namedtuple
         self.caption = caption
         self.title = title
         self.displayed_count = displayed_count
+        self.last_displayed = last_displayed
 
 
 class Model:
