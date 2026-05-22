@@ -322,6 +322,10 @@ ExecStart=/opt/node_exporter/node_exporter \
   --collector.filesystem \
   --collector.netdev \
   --collector.netclass \
+  --collector.hwmon \
+  --collector.thermal_zone \
+  --collector.loadavg \
+  --collector.boot_time \
   --collector.filesystem.ignored-fs-types=^(autofs|binfmt_misc|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|overlay|proc|pstore|rpc_pipefs|securityfs|selinuxfs|sysfs|tracefs)$ \
   --collector.filesystem.ignored-mount-points=^/(dev|proc|sys|run|var/lib/docker/.+|var/lib/containers/.+)($|/) \
   --collector.netclass.ignored-devices=^(veth.*|cali.*|[a-f0-9]{15})$ \
