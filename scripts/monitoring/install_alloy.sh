@@ -77,7 +77,7 @@ echo "✅ Loki URL set to: $loki_url"
 echo "✅ Prometheus URL set to: $prometheus_url"
 
 echo "⬇️ Downloading Alloy config template..."
-$SUDO curl -fsSL https://raw.githubusercontent.com/ravado/picframe/refs/heads/main/scripts/monitoring/default_config.alloy -o /etc/alloy/config.alloy
+$SUDO curl -fsSL https://raw.githubusercontent.com/ravado/picframe/refs/heads/develop/scripts/monitoring/default_config.alloy -o /etc/alloy/config.alloy
 
 echo "✏️ Replacing placeholders in config..."
 $SUDO sed -i "s|\${LOKI_URL}|${loki_url}|g" /etc/alloy/config.alloy

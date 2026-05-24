@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-REPO_URL="https://raw.githubusercontent.com/ravado/picframe/main/scripts/install"
+REPO_URL="https://raw.githubusercontent.com/ravado/picframe/develop/scripts/install"
 
 # Always work in current dir for curl|bash
 SCRIPT_DIR="$(pwd)"

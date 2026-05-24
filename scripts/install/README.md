@@ -74,7 +74,7 @@ cat /etc/resolv.conf             # tunnel DNS should appear when wg0 up
 ## One-Liner Install
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/ravado/picframe/main/scripts/install/install_all.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/ravado/picframe/develop/scripts/install/install_all.sh)
 ```
 
 ---

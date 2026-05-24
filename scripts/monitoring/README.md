@@ -14,7 +14,7 @@
 
 ```bash
 sudo apt update && sudo apt install -y curl
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/ravado/picframe/refs/heads/main/scripts/monitoring/install_fluentbit_and_node_exporter.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/ravado/picframe/refs/heads/develop/scripts/monitoring/install_fluentbit_and_node_exporter.sh)"
 ```
 
 Після встановлення додайте target до конфігу Prometheus сервера:
@@ -33,7 +33,7 @@ All-in-one агент від Grafana. Споживає 200-300MB RAM — не р
 
 ```bash
 sudo apt update && sudo apt install -y curl
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/ravado/picframe/refs/heads/main/scripts/monitoring/install_alloy.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/ravado/picframe/refs/heads/develop/scripts/monitoring/install_alloy.sh)"
 ```
 
 ## 📄 Файли в каталозі
