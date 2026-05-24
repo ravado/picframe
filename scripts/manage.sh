@@ -37,6 +37,9 @@ Commands:
                           If omitted, auto-detect from this frame's crontab.
   ${BOLD}list-wifi${RESET} [-s]           List saved WiFi profiles (-s reveals passwords)
   ${BOLD}add-wifi${RESET}                 Save a new WiFi profile (interactive)
+  ${BOLD}update-web-ui${RESET} [--force|--check]
+                          Sync repo's src/picframe/html/ into the runtime
+                          html folder. --check reports drift only.
   ${BOLD}completion${RESET} <bash|fish>          Print shell completion script
   ${BOLD}install-completion${RESET} [bash|fish]   Install completion into your rc / fish dir
                                   (auto-detects shell from \$SHELL if omitted)
@@ -47,6 +50,8 @@ Examples:
   $(basename "$0") sync-photos batanovs
   $(basename "$0") list-wifi -s
   $(basename "$0") add-wifi
+  $(basename "$0") update-web-ui
+  $(basename "$0") update-web-ui --check
   $(basename "$0") install-completion
 EOF
 }
@@ -160,7 +165,7 @@ _picframe_manage_complete() {
   sub="${COMP_WORDS[1]:-}"
 
   if [ "$COMP_CWORD" -eq 1 ]; then
-    COMPREPLY=( $(compgen -W "sync-photos list-wifi add-wifi completion install-completion help" -- "$cur") )
+    COMPREPLY=( $(compgen -W "sync-photos list-wifi add-wifi update-web-ui completion install-completion help" -- "$cur") )
     return
   fi
 
@@ -172,6 +177,10 @@ _picframe_manage_complete() {
     list-wifi)
       [ "$COMP_CWORD" -eq 2 ] && \
         COMPREPLY=( $(compgen -W "-s --show-passwords" -- "$cur") )
+      ;;
+    update-web-ui)
+      [ "$COMP_CWORD" -eq 2 ] && \
+        COMPREPLY=( $(compgen -W "--force --check --help" -- "$cur") )
       ;;
     completion|install-completion)
       [ "$COMP_CWORD" -eq 2 ] && \
@@ -242,9 +251,10 @@ print_fish_completion() {
   cat <<'EOF'
 # picframe manage.sh — fish completion
 complete -c manage.sh -f
-complete -c manage.sh -n '__fish_use_subcommand' -a sync-photos -d 'Run photo sync now'
-complete -c manage.sh -n '__fish_use_subcommand' -a list-wifi   -d 'List saved WiFi profiles'
-complete -c manage.sh -n '__fish_use_subcommand' -a add-wifi    -d 'Save a new WiFi profile'
+complete -c manage.sh -n '__fish_use_subcommand' -a sync-photos   -d 'Run photo sync now'
+complete -c manage.sh -n '__fish_use_subcommand' -a list-wifi     -d 'List saved WiFi profiles'
+complete -c manage.sh -n '__fish_use_subcommand' -a add-wifi      -d 'Save a new WiFi profile'
+complete -c manage.sh -n '__fish_use_subcommand' -a update-web-ui -d 'Sync src/picframe/html into runtime html folder'
 complete -c manage.sh -n '__fish_use_subcommand' -a completion         -d 'Print shell completion'
 complete -c manage.sh -n '__fish_use_subcommand' -a install-completion -d 'Install shell completion'
 complete -c manage.sh -n '__fish_use_subcommand' -a help               -d 'Show help'
@@ -252,6 +262,8 @@ complete -c manage.sh -n '__fish_seen_subcommand_from sync-photos' \
   -a 'home batanovs cherednychoks'
 complete -c manage.sh -n '__fish_seen_subcommand_from list-wifi' \
   -a '-s --show-passwords'
+complete -c manage.sh -n '__fish_seen_subcommand_from update-web-ui' \
+  -a '--force --check --help'
 complete -c manage.sh -n '__fish_seen_subcommand_from completion install-completion' \
   -a 'bash fish'
 EOF
@@ -265,6 +277,10 @@ cmd_add_wifi() {
   exec "${SCRIPT_DIR}/ops/add_wifi.sh" "$@"
 }
 
+cmd_update_web_ui() {
+  exec "${SCRIPT_DIR}/update_web_ui.sh" "$@"
+}
+
 main() {
   if [[ $# -lt 1 ]]; then
     usage
@@ -273,9 +289,10 @@ main() {
 
   local cmd="$1"; shift
   case "$cmd" in
-    sync-photos)        cmd_sync_photos "$@" ;;
-    list-wifi)          cmd_list_wifi   "$@" ;;
-    add-wifi)           cmd_add_wifi    "$@" ;;
+    sync-photos)        cmd_sync_photos   "$@" ;;
+    list-wifi)          cmd_list_wifi     "$@" ;;
+    add-wifi)           cmd_add_wifi      "$@" ;;
+    update-web-ui)      cmd_update_web_ui "$@" ;;
     completion)         cmd_completion         "$@" ;;
     install-completion) cmd_install_completion "$@" ;;
     help|-h|--help)     usage ;;
