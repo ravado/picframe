@@ -1,6 +1,5 @@
 import threading
 import logging
-import time
 
 
 class GpioController:
@@ -14,6 +13,7 @@ class GpioController:
         self.__prev_touch_sensor_pin = config.get('prev_touch_sensor_pin', 20)
         self.__next_touch_sensor_pin = config.get('next_touch_sensor_pin', 21)
         self.__clap_sensor_pin = config.get('clap_sensor_pin', 4)
+        self.__chip_path = config.get('gpiochip', '/dev/gpiochip0')
 
         self.__clap_count = 0
         self.__clap_colldown_timer = None
@@ -21,17 +21,24 @@ class GpioController:
 
         self.__frame_controller = frame_controller
 
+        self.__gpiod = None
+        self.__request = None
+        self.__pending = {}       # pin -> callback, collected before the request is opened
+        self.__callbacks = {}     # pin -> callback, active after the request is opened
+        self.__running = False
+
         try:
             import gpiod
-            self.__gpiod = gpiod  # Store gpiod module for use in other methods
-            self.__chip = gpiod.Chip("gpiochip0")
-            self.__lines = {}
+            from gpiod.line import Edge
+            self.__gpiod = gpiod
+            self.__edge = Edge
             # self.__init_touch_buttons()
             self.__init_clapper()
+            self.__start()
         except Exception as e:
             self.__logger.warning("⚠️ GPIO unavailable: %s", e)
-            self.__chip = None
             self.__gpiod = None
+            self.__request = None
 
     def next_photo(self, line):
         self.__logger.info("GPIO: Next photo pressed")
@@ -74,47 +81,49 @@ class GpioController:
         self.__clap_count = 0
 
     def __init_touch_buttons(self):
-        try:
-            for pin, cb in [
-                (self.__prev_touch_sensor_pin, self.prev_photo),
-                (self.__next_touch_sensor_pin, self.next_photo),
-            ]:
-                line = self.__chip.get_line(pin)
-                line.request(consumer="picframe", type=self.__gpiod.LINE_REQ_EV_FALLING_EDGE)
-                self.__lines[pin] = (line, cb)
-
-            threading.Thread(target=self.__event_loop, daemon=True).start()
-        except Exception as e:
-            self.__logger.warning("⚠️ Failed to init touch buttons, skipping.")
-            self.__logger.debug("Cause: %s", e)
+        self.__pending[self.__prev_touch_sensor_pin] = self.prev_photo
+        self.__pending[self.__next_touch_sensor_pin] = self.next_photo
 
     def __init_clapper(self):
-        try:
-            line = self.__chip.get_line(self.__clap_sensor_pin)
-            line.request(consumer="picframe", type=self.__gpiod.LINE_REQ_EV_FALLING_EDGE)
-            self.__lines[self.__clap_sensor_pin] = (line, self.clap_detected)
+        self.__pending[self.__clap_sensor_pin] = self.clap_detected
 
+    def __start(self):
+        """Open a single line request for all configured pins and start the event loop."""
+        if not self.__pending:
+            return
+        try:
+            line_config = {
+                pin: self.__gpiod.LineSettings(edge_detection=self.__edge.FALLING)
+                for pin in self.__pending
+            }
+            self.__request = self.__gpiod.request_lines(
+                self.__chip_path,
+                consumer="picframe",
+                config=line_config,
+            )
+            self.__callbacks = dict(self.__pending)
+            self.__running = True
             threading.Thread(target=self.__event_loop, daemon=True).start()
         except Exception as e:
-            self.__logger.warning("⚠️ Failed to init clapper, skipping.")
+            self.__logger.warning("⚠️ Failed to init GPIO lines, skipping.")
             self.__logger.debug("Cause: %s", e)
+            self.__request = None
 
     def __event_loop(self):
-        """Background thread to listen for GPIO events."""
-        while True:
-            for pin, (line, cb) in self.__lines.items():
-                # event_wait expects integer timeout in milliseconds
-                if line.event_wait(100):  # 100 ms
-                    event = line.event_read()
-                    if event.type == self.__gpiod.LineEvent.FALLING_EDGE:
-                        cb(pin)
+        """Background thread to listen for GPIO edge events."""
+        while self.__running:
+            # wait_edge_events takes a timeout in seconds (float); returns False on timeout
+            if self.__request.wait_edge_events(0.1):  # 100 ms
+                for event in self.__request.read_edge_events():
+                    cb = self.__callbacks.get(event.line_offset)
+                    if cb:
+                        cb(event.line_offset)
 
     def __del__(self):
         try:
-            for line, _ in self.__lines.values():
-                line.release()
-            if self.__chip:
-                self.__chip.close()
+            self.__running = False
+            if self.__request:
+                self.__request.release()
             self.__logger.debug("gpiod cleanup done")
         except Exception as e:
             self.__logger.debug("gpiod cleanup failed: %s", e)
