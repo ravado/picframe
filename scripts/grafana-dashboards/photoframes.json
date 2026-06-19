@@ -22,84 +22,6 @@
   "links": [],
   "panels": [
     {
-      "fieldConfig": {
-        "defaults": {},
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 2,
-        "w": 8,
-        "x": 0,
-        "y": 0
-      },
-      "id": 24,
-      "options": {
-        "code": {
-          "language": "plaintext",
-          "showLineNumbers": false,
-          "showMiniMap": false
-        },
-        "content": "# PhotoFrame Home",
-        "mode": "markdown"
-      },
-      "pluginVersion": "12.0.2",
-      "title": "",
-      "transparent": true,
-      "type": "text"
-    },
-    {
-      "fieldConfig": {
-        "defaults": {},
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 2,
-        "w": 8,
-        "x": 8,
-        "y": 0
-      },
-      "id": 25,
-      "options": {
-        "code": {
-          "language": "plaintext",
-          "showLineNumbers": false,
-          "showMiniMap": false
-        },
-        "content": "# PhotoFrame Batanovs",
-        "mode": "markdown"
-      },
-      "pluginVersion": "12.0.2",
-      "title": "",
-      "transparent": true,
-      "type": "text"
-    },
-    {
-      "fieldConfig": {
-        "defaults": {},
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 2,
-        "w": 8,
-        "x": 16,
-        "y": 0
-      },
-      "id": 26,
-      "options": {
-        "code": {
-          "language": "plaintext",
-          "showLineNumbers": false,
-          "showMiniMap": false
-        },
-        "content": "# PhotoFrame Cherednychoks",
-        "mode": "markdown"
-      },
-      "pluginVersion": "12.0.2",
-      "title": "",
-      "transparent": true,
-      "type": "text"
-    },
-    {
       "datasource": {
         "type": "prometheus",
         "uid": "ceqikc2khy22of"
@@ -222,7 +144,7 @@
         },
         "showUnfilled": true,
         "sizing": "auto",
-        "valueMode": "hidden"
+        "valueMode": "color"
       },
       "pluginVersion": "12.0.2",
       "targets": [
@@ -364,7 +286,7 @@
         },
         "showUnfilled": true,
         "sizing": "auto",
-        "valueMode": "hidden"
+        "valueMode": "color"
       },
       "pluginVersion": "12.0.2",
       "targets": [
@@ -506,7 +428,7 @@
         },
         "showUnfilled": true,
         "sizing": "auto",
-        "valueMode": "hidden"
+        "valueMode": "color"
       },
       "pluginVersion": "12.0.2",
       "targets": [
@@ -1102,11 +1024,11 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "red"
               },
               {
-                "color": "red",
-                "value": 80
+                "color": "green",
+                "value": 1
               }
             ]
           }
@@ -1142,12 +1064,12 @@
         {
           "direction": "backward",
           "editorMode": "code",
-          "expr": "count_over_time({instance=\"photoframe-home\"} |~ \"Copied \\\\(new\\\\)\" [14d])",
-          "queryType": "range",
+          "expr": "sum(count_over_time({instance=\"photoframe-home\"} |= \"Sync complete\" [36h]))",
+          "queryType": "instant",
           "refId": "A"
         }
       ],
-      "title": "Added photos (14 days)",
+      "title": "Synced (36h)",
       "type": "stat"
     },
     {
@@ -1167,10 +1089,6 @@
             "steps": [
               {
                 "color": "green"
-              },
-              {
-                "color": "red",
-                "value": 1
               }
             ]
           }
@@ -1211,7 +1129,7 @@
           "refId": "A"
         }
       ],
-      "title": "Errors (7 days)",
+      "title": "Errors (24h)",
       "type": "stat"
     },
     {
@@ -1230,11 +1148,11 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "red"
               },
               {
-                "color": "red",
-                "value": 80
+                "color": "green",
+                "value": 1
               }
             ]
           }
@@ -1270,12 +1188,12 @@
         {
           "direction": "backward",
           "editorMode": "code",
-          "expr": "count_over_time({instance=\"photoframe-batanovs\"} |~ \"Copied \\\\(new\\\\)\" [14d])",
-          "queryType": "range",
+          "expr": "sum(count_over_time({instance=\"photoframe-batanovs\"} |= \"Sync complete\" [36h]))",
+          "queryType": "instant",
           "refId": "A"
         }
       ],
-      "title": "Added photos (14 days)",
+      "title": "Synced (36h)",
       "type": "stat"
     },
     {
@@ -1288,16 +1206,13 @@
           "color": {
             "mode": "thresholds"
           },
+          "noValue": "0",
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
                 "color": "green"
-              },
-              {
-                "color": "red",
-                "value": 1
               }
             ]
           }
@@ -1338,7 +1253,7 @@
           "refId": "A"
         }
       ],
-      "title": "Errors (7 days)",
+      "title": "Errors (24h)",
       "type": "stat"
     },
     {
@@ -1357,11 +1272,11 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "red"
               },
               {
-                "color": "red",
-                "value": 80
+                "color": "green",
+                "value": 1
               }
             ]
           }
@@ -1397,12 +1312,12 @@
         {
           "direction": "backward",
           "editorMode": "code",
-          "expr": "count_over_time({instance=\"photoframe-cherednychoks\"} |~ \"Copied \\\\(new\\\\)\" [14d])",
-          "queryType": "range",
+          "expr": "sum(count_over_time({instance=\"photoframe-cherednychoks\"} |= \"Sync complete\" [36h]))",
+          "queryType": "instant",
           "refId": "A"
         }
       ],
-      "title": "Added photos (14 days)",
+      "title": "Synced (36h)",
       "type": "stat"
     },
     {
@@ -1422,10 +1337,6 @@
             "steps": [
               {
                 "color": "green"
-              },
-              {
-                "color": "red",
-                "value": 1
               }
             ]
           }
@@ -1466,7 +1377,7 @@
           "refId": "A"
         }
       ],
-      "title": "Errors (7 days)",
+      "title": "Errors (24h)",
       "type": "stat"
     },
     {
@@ -1482,7 +1393,7 @@
         "h": 15,
         "w": 8,
         "x": 0,
-        "y": 15
+        "y": 19
       },
       "id": 7,
       "options": {
@@ -1522,7 +1433,7 @@
         "h": 15,
         "w": 8,
         "x": 8,
-        "y": 15
+        "y": 19
       },
       "id": 14,
       "options": {
@@ -1563,7 +1474,7 @@
         "h": 15,
         "w": 8,
         "x": 16,
-        "y": 15
+        "y": 19
       },
       "id": 21,
       "options": {
@@ -1589,6 +1500,396 @@
       ],
       "title": "Error Logs",
       "type": "logs"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ceqikc2khy22of"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "options": {
+                "0": {
+                  "color": "red",
+                  "index": 1,
+                  "text": "Offline"
+                },
+                "1": {
+                  "color": "green",
+                  "index": 0,
+                  "text": "Online"
+                }
+              },
+              "type": "value"
+            }
+          ],
+          "noValue": "Offline",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red"
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 2,
+        "w": 8,
+        "x": 0,
+        "y": 0
+      },
+      "id": 30,
+      "options": {
+        "colorMode": "background_solid",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.0.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ceqikc2khy22of"
+          },
+          "editorMode": "code",
+          "expr": "up{instance=\"photoframe-home\"}",
+          "instant": true,
+          "legendFormat": "__auto",
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "title": "PhotoFrame Home",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ceqikc2khy22of"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "options": {
+                "0": {
+                  "color": "red",
+                  "index": 1,
+                  "text": "Offline"
+                },
+                "1": {
+                  "color": "green",
+                  "index": 0,
+                  "text": "Online"
+                }
+              },
+              "type": "value"
+            }
+          ],
+          "noValue": "Offline",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red"
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 2,
+        "w": 8,
+        "x": 8,
+        "y": 0
+      },
+      "id": 31,
+      "options": {
+        "colorMode": "background_solid",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.0.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ceqikc2khy22of"
+          },
+          "editorMode": "code",
+          "expr": "up{instance=\"photoframe-batanovs\"}",
+          "instant": true,
+          "legendFormat": "__auto",
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "title": "PhotoFrame Batanovs",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ceqikc2khy22of"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "options": {
+                "0": {
+                  "color": "red",
+                  "index": 1,
+                  "text": "Offline"
+                },
+                "1": {
+                  "color": "green",
+                  "index": 0,
+                  "text": "Online"
+                }
+              },
+              "type": "value"
+            }
+          ],
+          "noValue": "Offline",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red"
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 2,
+        "w": 8,
+        "x": 16,
+        "y": 0
+      },
+      "id": 32,
+      "options": {
+        "colorMode": "background_solid",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "12.0.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ceqikc2khy22of"
+          },
+          "editorMode": "code",
+          "expr": "up{instance=\"photoframe-cherednychoks\"}",
+          "instant": true,
+          "legendFormat": "__auto",
+          "range": false,
+          "refId": "A"
+        }
+      ],
+      "title": "PhotoFrame Cherednychoks",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "eeq0q09bvt69sa"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 15
+      },
+      "id": 33,
+      "timeFrom": "2d",
+      "options": {
+        "dedupStrategy": "none",
+        "enableInfiniteScrolling": false,
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": false,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": false
+      },
+      "pluginVersion": "12.0.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "eeq0q09bvt69sa"
+          },
+          "direction": "backward",
+          "editorMode": "code",
+          "expr": "{instance=\"photoframe-home\"} |= \"Sync complete\"",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "Last sync",
+      "type": "logs"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "eeq0q09bvt69sa"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 8,
+        "y": 15
+      },
+      "id": 34,
+      "timeFrom": "2d",
+      "options": {
+        "dedupStrategy": "none",
+        "enableInfiniteScrolling": false,
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": false,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": false
+      },
+      "pluginVersion": "12.0.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "eeq0q09bvt69sa"
+          },
+          "direction": "backward",
+          "editorMode": "code",
+          "expr": "{instance=\"photoframe-batanovs\"} |= \"Sync complete\"",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "Last sync",
+      "type": "logs"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "eeq0q09bvt69sa"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 15
+      },
+      "id": 35,
+      "timeFrom": "2d",
+      "options": {
+        "dedupStrategy": "none",
+        "enableInfiniteScrolling": false,
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": false,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": false
+      },
+      "pluginVersion": "12.0.2",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "eeq0q09bvt69sa"
+          },
+          "direction": "backward",
+          "editorMode": "code",
+          "expr": "{instance=\"photoframe-cherednychoks\"} |= \"Sync complete\"",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "Last sync",
+      "type": "logs"
     }
   ],
   "preload": false,
@@ -1605,5 +1906,5 @@
   "timezone": "browser",
   "title": "Photo Frames",
   "uid": "cb488fc7-2d0a-4ea5-a185-5eca0c2880be",
-  "version": 53
+  "version": 56
 }
