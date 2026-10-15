@@ -3,7 +3,8 @@ import os
 import time
 import logging
 import locale
-from picframe import geo_reverse, image_cache
+from datetime import date
+from picframe import geo_reverse, image_cache, memories
 
 DEFAULT_CONFIGFILE = "~/picframe_data/config/configuration.yaml"
 DEFAULT_CONFIG = {
@@ -55,6 +56,8 @@ DEFAULT_CONFIG = {
         'menu_text_sz': 40,
         'menu_autohide_tm': 10.0,
         'geo_suppress_list': [],
+        'memories_text_one': '{} year ago',
+        'memories_text_other': '{} years ago',
     },
     'model': {
 
@@ -85,6 +88,8 @@ DEFAULT_CONFIG = {
         'log_file': '',
         'location_filter': '',
         'tags_filter': '',
+        'memories': False,
+        'memories_every': 4,
     },
     'mqtt': {
         'use_mqtt': False,  # Set tue true, to enable mqtt
@@ -146,6 +151,7 @@ class Pic:  # TODO could this be done more elegantly with namedtuple
         self.tags = tags
         self.caption = caption
         self.title = title
+        self.years_ago = None  # set by Model when the pic is shown as an On This Day memory
 
 
 class Model:
@@ -185,6 +191,12 @@ class Model:
         self.__file_index = 0  # pointer to next position in __file_list
         self.__current_pics = (None, None)  # this hold a tuple of (pic, None) or two pic objects if portrait pairs
         self.__num_run_through = 0
+        self.__memories = None  # memories.Memories for today, rebuilt when the date or filters change
+        self.__memories_key = None  # (date, where_clause) that __memories was built for
+        self.__memory_ids = set()  # all of today's memory file_ids, kept out of the regular slideshow
+        self.__slides_since_memory = 0
+        self.__current_is_memory = False
+        self.__going_back = False
 
         model_config = self.get_model_config()  # alias for brevity as used several times below
         try:
@@ -313,6 +325,16 @@ class Model:
             self.set_where_clause("tags_filter")  # remove from where_clause
         self.__reload_files = True
 
+    @property
+    def memories(self):
+        return self.__config['model']['memories']
+
+    @memories.setter
+    def memories(self, val: bool):
+        self.__config['model']['memories'] = val
+        self.__memories_key = None  # rebuild on next use
+        self.__slides_since_memory = 0
+
     def __build_filter(self, val, field):
         if val.count("(") != val.count(")"):
             return None  # this should clear the filter and not raise an error
@@ -371,9 +393,34 @@ class Model:
         self.__reload_files = True
 
     def set_next_file_to_previous_file(self):
-        self.__file_index = (self.__file_index - 2) % self.__number_of_files  # TODO deleting last image results in ZeroDivisionError # noqa: E501
+        if self.__number_of_files == 0:
+            return  # TODO deleting last image used to result in ZeroDivisionError
+        # a memory is not part of __file_list, so going back from one only needs to step back one place
+        index = self.__file_index - (1 if self.__current_is_memory else 2)
+        # step over entries that only hold today's memories, as get_next_file would skip them forward again
+        memory_ids = self.__memory_ids if self.memories else set()
+        for _ in range(self.__number_of_files):
+            if not all(f in memory_ids for f in self.__file_list[index % self.__number_of_files]):
+                break
+            index -= 1
+        self.__file_index = index % self.__number_of_files
+        self.__going_back = True  # don't let a due memory replace the previous image
 
     def get_next_file(self):
+        going_back = self.__going_back
+        self.__going_back = False
+        if self.memories:
+            self.__update_memories()
+            every = max(1, int(self.get_model_config()['memories_every']))
+            if not going_back and self.__slides_since_memory >= every - 1:
+                pic = self.__next_memory_pic()
+                if pic is not None:
+                    self.__slides_since_memory = 0
+                    self.__current_is_memory = True
+                    self.__current_pics = (pic, None)
+                    return self.__current_pics
+        memory_ids = self.__memory_ids if self.memories else set()
+        skipped_memories = 0
         missing_images = 0
 
         # loop until we acquire a valid image set
@@ -409,6 +456,16 @@ class Model:
 
             # Load the current image set
             file_ids = self.__file_list[self.__file_index]
+
+            # Today's memories are only shown as memories, not in the regular slideshow.
+            # Stop skipping if everything in the list is a memory, to avoid looping forever.
+            if memory_ids and skipped_memories < self.__number_of_files:
+                file_ids = tuple(f for f in file_ids if f not in memory_ids)  # keep a portrait partner
+                if not file_ids:
+                    skipped_memories += 1
+                    self.__file_index += 1
+                    continue
+
             pic_row = self.__image_cache.get_file_info(file_ids[0])
             pic1 = Pic(**pic_row) if pic_row is not None else None
             if len(file_ids) == 2:
@@ -437,7 +494,41 @@ class Model:
             missing_images += 1
 
         self.__current_pics = (pic1, pic2)
+        self.__current_is_memory = False
+        self.__slides_since_memory += 1
         return self.__current_pics
+
+    def __update_memories(self):
+        # Build today's memories when the date or the filters change. Photos already shown
+        # today (according to the db) are left out so a restart doesn't show them again.
+        today = date.today()
+        where_clause = self.__build_where_clause()
+        if self.__memories_key == (today, where_clause):
+            return
+        rows = self.__image_cache.get_memory_candidates(
+            "{} AND {}".format(where_clause, memories.sql_condition(today)))
+        start_of_today = time.mktime(today.timetuple())
+        self.__memory_ids = {file_id for file_id, _year, _last_displayed in rows}
+        self.__memories = memories.Memories(
+            [(file_id, year) for file_id, year, last_displayed in rows
+             if last_displayed is None or last_displayed < start_of_today],
+            today)
+        self.__memories_key = (today, where_clause)
+        self.__logger.info("Memories for %s: %d to show, %d already shown today",
+                           today, len(self.__memories), len(self.__memory_ids) - len(self.__memories))
+
+    def __next_memory_pic(self):
+        while True:
+            memory = self.__memories.next()
+            if memory is None:
+                return None  # all of today's memories have been shown
+            file_id, years_ago = memory
+            pic_row = self.__image_cache.get_file_info(file_id)  # also records it as displayed today
+            if pic_row is None or not os.path.isfile(pic_row['fname']):
+                continue
+            pic = Pic(**pic_row)
+            pic.years_ago = years_ago
+            return pic
 
     def get_number_of_files(self):
         return sum(
@@ -467,7 +558,7 @@ class Model:
                 self.__number_of_files -= 1
                 break
 
-    def __get_files(self):
+    def __build_where_clause(self):
         if self.subdirectory != "":
             picture_dir = os.path.join(self.__pic_dir, self.subdirectory)  # TODO catch, if subdirecotry does not exist
         else:
@@ -476,9 +567,13 @@ class Model:
         where_list.extend(self.__where_clauses.values())
 
         if len(where_list) > 0:
-            where_clause = " AND ".join(where_list)  # TODO now always true - remove unreachable code
+            return " AND ".join(where_list)  # TODO now always true - remove unreachable code
         else:
-            where_clause = "1"
+            return "1"
+
+    def __get_files(self):
+        where_clause = self.__build_where_clause()
+        self.__memories_key = None  # also pick up photos added to the db since memories were built
 
         sort_list = []
         recent_n = self.get_model_config()["recent_n"]

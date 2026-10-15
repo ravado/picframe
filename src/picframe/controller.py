@@ -210,6 +210,16 @@ class Controller:
             self.publish_state()
 
     @property
+    def memories(self):
+        return self.__model.memories
+
+    @memories.setter
+    def memories(self, val: bool):
+        self.__model.memories = val
+        if self.__mqtt_config['use_mqtt']:
+            self.publish_state()
+
+    @property
     def fade_time(self):
         return self.__model.fade_time
 

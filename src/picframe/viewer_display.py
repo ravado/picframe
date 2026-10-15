@@ -7,7 +7,7 @@ from datetime import datetime
 from PIL import Image, ImageFilter, ImageFile
 import numpy as np
 import pi3d  # type: ignore
-from picframe import mat_image, get_image_meta
+from picframe import mat_image, get_image_meta, memories
 from picframe.video_streamer import VideoStreamer, VIDEO_EXTENSIONS, VideoFrameExtractor
 
 # supported display modes for display switch
@@ -65,6 +65,8 @@ class ViewerDisplay:
         self.__fit = config['fit']
         self.__video_fit_display = config['video_fit_display']
         self.__geo_suppress_list = config['geo_suppress_list']
+        self.__memories_text_one = config['memories_text_one']
+        self.__memories_text_other = config['memories_text_other']
         self.__kenburns = config['kenburns']
         if self.__kenburns:
             self.__kb_up = True
@@ -380,7 +382,11 @@ class ViewerDisplay:
         # if side 0 and pair False then this is a full width text and put into
         # __textblocks[0] otherwise it is half width and put into __textblocks[position]
         info_strings = []
-        if pic is not None and (self.__show_text > 0 or paused):  # was SHOW_TEXT_TM > 0.0
+        years_ago = getattr(pic, 'years_ago', None)
+        if pic is not None and (self.__show_text > 0 or paused or years_ago):  # was SHOW_TEXT_TM > 0.0
+            if years_ago:  # On This Day memory, always labelled
+                info_strings.append(memories.years_ago_text(years_ago, self.__memories_text_one,
+                                                            self.__memories_text_other))
             if (self.__show_text & 1) == 1 and pic.title is not None:  # title
                 info_strings.append(pic.title)
             if (self.__show_text & 2) == 2 and pic.caption is not None:  # caption

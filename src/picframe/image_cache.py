@@ -147,6 +147,20 @@ class ImageCache:
         except Exception:
             return []
 
+    def get_memory_candidates(self, where_clause):
+        """Return (file_id, year, last_displayed) for every file matching where_clause."""
+        cursor = self.__db.cursor()
+        cursor.row_factory = None
+        sql = """SELECT file_id,
+                    strftime('%Y', exif_datetime, 'unixepoch', 'localtime'),
+                    (SELECT last_displayed FROM file WHERE file.file_id = all_data.file_id)
+                FROM all_data WHERE {0}""".format(where_clause)
+        try:
+            return cursor.execute(sql).fetchall()
+        except Exception as e:
+            self.__logger.warning("Failed to query memories: %s", e)
+            return []
+
     def get_file_info(self, file_id):
         if not file_id:
             return None
