@@ -1,12 +1,15 @@
+import json
 import os
 import random
+import shutil
 import sqlite3
 import time
 from datetime import date, datetime
 
 import pytest
+from PIL.TiffImagePlugin import IFDRational
 
-from picframe import memories, model
+from picframe import get_image_meta, image_cache, memories, model
 
 
 def local_epoch(*args):
@@ -23,18 +26,53 @@ def test_years_ago_text():
 def test_sql_condition_matches_same_day_in_earlier_years_only():
     db = sqlite3.connect(":memory:")
     db.execute("CREATE TABLE all_data (file_id INTEGER, exif_datetime REAL)")
+    db.execute("CREATE TABLE exif (file_id INTEGER PRIMARY KEY, json TEXT)")
+
+    def exif(dt):
+        return json.dumps({"EXIF DateTimeOriginal": dt})
+
     rows = [
-        (1, local_epoch(2023, 10, 15, 0, 0, 1)),   # same day, 3 years ago (just after midnight)
-        (2, local_epoch(2019, 10, 15, 23, 59, 0)),  # same day, 7 years ago (just before midnight)
-        (3, local_epoch(2023, 10, 14, 12, 0)),     # day before
-        (4, local_epoch(2023, 10, 16, 12, 0)),     # day after
-        (5, local_epoch(2026, 10, 15, 9, 0)),      # today, this year
-        (6, 0),                                    # no date
-        (7, None),                                 # no meta row
+        # file_id, exif_datetime, exif json (None = no exif row yet)
+        (1, local_epoch(2023, 10, 15, 0, 0, 1), exif("2023:10:15 00:00:01")),    # 3 years ago, just after midnight
+        (2, local_epoch(2019, 10, 15, 23, 59, 0), exif("2019:10:15 23:59:00")),  # 7 years ago, just before midnight
+        (3, local_epoch(2023, 10, 14, 12, 0), exif("2023:10:14 12:00:00")),      # day before
+        (4, local_epoch(2023, 10, 16, 12, 0), exif("2023:10:16 12:00:00")),      # day after
+        (5, local_epoch(2026, 10, 15, 9, 0), exif("2026:10:15 09:00:00")),       # today, this year
+        (6, 0, None),                                                           # no date
+        (7, None, None),                                                        # no meta row
+        (8, local_epoch(2022, 10, 15, 12, 0), "{}"),                            # date from file mtime, no EXIF
+        (9, local_epoch(2022, 10, 15, 12, 0), exif("0000:00:00 00:00:00")),      # bogus tag, mtime used instead
+        (10, local_epoch(2022, 10, 15, 12, 0), None),                           # not backfilled yet
+        (11, local_epoch(2021, 10, 15, 8, 0),
+         json.dumps({"Image DateTimeOriginal": "2021:10:15 08:00:00.123"})),    # tag in IFD0, with subseconds
     ]
-    db.executemany("INSERT INTO all_data VALUES (?, ?)", rows)
+    db.executemany("INSERT INTO all_data VALUES (?, ?)", [r[:2] for r in rows])
+    db.executemany("INSERT INTO exif VALUES (?, ?)", [(r[0], r[2]) for r in rows if r[2] is not None])
     sql = "SELECT file_id FROM all_data WHERE " + memories.sql_condition(date(2026, 10, 15))
-    assert sorted(r[0] for r in db.execute(sql)) == [1, 2]
+    assert sorted(r[0] for r in db.execute(sql)) == [1, 2, 11]
+
+
+def test_tags_to_json_keeps_plain_values_and_drops_binary_and_oversized():
+    tags = {
+        "EXIF DateTimeOriginal": "2023:10:15 14:32:07\x00",
+        "Image Make": "Apple",
+        "EXIF ISOSpeedRatings": 50,
+        "EXIF FNumber": IFDRational(8, 5),
+        "GPS GPSLatitude": (IFDRational(50, 1), IFDRational(27, 1), IFDRational(1234, 100)),
+        "EXIF MakerNote": b"\x00\x01" * 5000,
+        "EXIF ExposureBiasValue": IFDRational(0, 0),  # NaN
+        "EXIF UserComment": "x" * 1000,
+        "IPTC Keywords": ["beach", "family"],
+    }
+    stored = json.loads(get_image_meta.tags_to_json(tags))
+    assert stored == {
+        "EXIF DateTimeOriginal": "2023:10:15 14:32:07",
+        "Image Make": "Apple",
+        "EXIF ISOSpeedRatings": 50,
+        "EXIF FNumber": 1.6,
+        "GPS GPSLatitude": [50.0, 27.0, 12.34],
+        "IPTC Keywords": ["beach", "family"],
+    }
 
 
 def test_memories_each_year_gets_a_turn_and_nothing_repeats():
@@ -166,3 +204,129 @@ def test_model_memories_off(make_model):
     m, cache = make_model([1, 10, 2], [(10, "2023", 0)], enabled=False)
     assert next_shown(m, 3) == [(1, None), (10, None), (2, None)]
     assert cache.memory_where is None
+
+
+# --- exif table in a real ImageCache db ---
+
+IMAGES = os.path.join(os.path.dirname(__file__), "images")
+
+
+def wait_for(fn, timeout=30):
+    end = time.time() + timeout
+    while time.time() < end:
+        if fn():
+            return
+        time.sleep(0.1)
+    raise AssertionError("timed out")
+
+
+def exif_rows(db_file):
+    db = sqlite3.connect(db_file)
+    try:
+        return dict(db.execute("SELECT basename, exif.json FROM file JOIN exif USING (file_id)").fetchall())
+    finally:
+        db.close()
+
+
+def test_image_cache_stores_exif_json_and_backfills_old_db(tmp_path):
+    pic_dir = tmp_path / "pics"
+    pic_dir.mkdir()
+    shutil.copy(os.path.join(IMAGES, "AlleExif.JPG"), pic_dir / "AlleExif.JPG")
+    shutil.copy(os.path.join(IMAGES, "noimage.jpg"), pic_dir / "noimage.jpg")
+    db_file = str(tmp_path / "db.db3")
+
+    # new db: every scanned file gets an exif row
+    cache = image_cache.ImageCache(str(pic_dir), False, db_file, None, 0.1)
+    try:
+        wait_for(lambda: len(exif_rows(db_file)) == 2)
+    finally:
+        cache.stop()
+    rows = exif_rows(db_file)
+    assert json.loads(rows["AlleExif"])["EXIF DateTimeOriginal"].startswith("20")
+    assert "EXIF DateTimeOriginal" not in json.loads(rows["noimage"])
+
+    # turn it back into a v3 db with play stats, as on an existing frame
+    db = sqlite3.connect(db_file)
+    db.execute("DROP TRIGGER Clean_Exif_Trigger")
+    db.execute("DROP TABLE exif")
+    db.execute("UPDATE db_info SET schema_version = 3")
+    db.execute("UPDATE file SET displayed_count = 5, last_displayed = 123")
+    ids_before = dict(db.execute("SELECT basename, file_id FROM file").fetchall())
+    db.commit()
+    db.close()
+
+    # upgrade: rows are filled in by the background backfill, ids and stats are kept
+    cache = image_cache.ImageCache(str(pic_dir), False, db_file, None, 0.1)
+    try:
+        wait_for(lambda: len(exif_rows(db_file)) == 2)
+    finally:
+        cache.stop()
+    db = sqlite3.connect(db_file)
+    assert db.execute("SELECT schema_version FROM db_info").fetchone()[0] == 4
+    assert dict(db.execute("SELECT basename, file_id FROM file").fetchall()) == ids_before
+    assert db.execute("SELECT DISTINCT displayed_count, last_displayed FROM file").fetchall() == [(5, 123)]
+    db.close()
+    assert exif_rows(db_file) == rows
+
+
+def test_backfill_skips_missing_files_and_retries_them_later(tmp_path):
+    pic_dir = tmp_path / "pics"
+    pic_dir.mkdir()
+    shutil.copy(os.path.join(IMAGES, "AlleExif.JPG"), pic_dir / "AlleExif.JPG")
+    shutil.copy(os.path.join(IMAGES, "test3.HEIC"), pic_dir / "test3.HEIC")
+    db_file = str(tmp_path / "db.db3")
+    cache = image_cache.ImageCache(str(pic_dir), False, db_file, None, 0.1)
+    try:
+        wait_for(lambda: len(exif_rows(db_file)) == 2)
+    finally:
+        cache.stop()
+    db = sqlite3.connect(db_file)
+    db.execute("DELETE FROM exif")  # as if upgraded from v3
+    db.commit()
+    db.close()
+
+    # the HEIC is unavailable (e.g. share not mounted) during the first backfill: no row is written for it
+    os.rename(pic_dir / "test3.HEIC", tmp_path / "test3.HEIC")
+    cache = image_cache.ImageCache(str(pic_dir), False, db_file, None, 0.1)
+    try:
+        wait_for(lambda: cache._ImageCache__exif_backfill_done)
+    finally:
+        cache.stop()
+    assert list(exif_rows(db_file)) == ["AlleExif"]
+
+    # once it is back (same mtime, so not seen as a changed file) it is filled in
+    os.rename(tmp_path / "test3.HEIC", pic_dir / "test3.HEIC")
+    cache = image_cache.ImageCache(str(pic_dir), False, db_file, None, 0.1)
+    try:
+        wait_for(lambda: len(exif_rows(db_file)) == 2)
+    finally:
+        cache.stop()
+    assert json.loads(exif_rows(db_file)["test3"])["EXIF DateTimeOriginal"].startswith("20")
+
+
+def test_backfill_gets_past_missing_files_with_photos_in_subfolders(tmp_path, monkeypatch):
+    # the root holds only subfolders, so it is reported as modified on every scan
+    monkeypatch.setattr(image_cache.ImageCache, "EXIF_BACKFILL_BATCH", 2)
+    year_dir = tmp_path / "pics" / "2020"
+    year_dir.mkdir(parents=True)
+    for name in ("a", "b", "c", "d"):
+        shutil.copy(os.path.join(IMAGES, "AlleExif.JPG"), year_dir / (name + ".jpg"))
+    db_file = str(tmp_path / "db.db3")
+    cache = image_cache.ImageCache(str(tmp_path / "pics"), False, db_file, None, 0.05)
+    try:
+        wait_for(lambda: len(exif_rows(db_file)) == 4)
+    finally:
+        cache.stop()
+    db = sqlite3.connect(db_file)
+    db.execute("DELETE FROM exif")  # as if upgraded from v3
+    names = [r[0] for r in db.execute("SELECT basename FROM file ORDER BY file_id")]
+    db.commit()
+    db.close()
+    for name in names[:3]:  # the lowest ids are gone from disk, more than a batch
+        os.remove(year_dir / (name + ".jpg"))
+
+    cache = image_cache.ImageCache(str(tmp_path / "pics"), False, db_file, None, 0.05)
+    try:
+        wait_for(lambda: list(exif_rows(db_file)) == [names[3]], timeout=10)
+    finally:
+        cache.stop()

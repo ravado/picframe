@@ -6,11 +6,18 @@ def sql_condition(today):
     """SQL expression matching photos taken on today's month and day in an earlier year.
 
     exif_datetime is stored as a local time epoch (see ImageCache), so it is
-    converted back with the 'localtime' modifier.
+    converted back with the 'localtime' modifier. ImageCache falls back to the
+    file's modification time when there is no usable EXIF date, so the date must
+    also match the photo's DateTimeOriginal tag in the exif table. This leaves out
+    files without a real EXIF date, and videos.
     """
     return ("(exif_datetime > 0"
             " AND strftime('%m-%d', exif_datetime, 'unixepoch', 'localtime') = '{:02d}-{:02d}'"
-            " AND strftime('%Y', exif_datetime, 'unixepoch', 'localtime') < '{:04d}')"
+            " AND strftime('%Y', exif_datetime, 'unixepoch', 'localtime') < '{:04d}'"
+            " AND EXISTS (SELECT 1 FROM exif WHERE exif.file_id = all_data.file_id"
+            " AND substr(COALESCE(json_extract(exif.json, '$.\"EXIF DateTimeOriginal\"'),"
+            " json_extract(exif.json, '$.\"Image DateTimeOriginal\"')), 1, 10)"
+            " = strftime('%Y:%m:%d', all_data.exif_datetime, 'unixepoch', 'localtime')))"
             ).format(today.month, today.day, today.year)
 
 

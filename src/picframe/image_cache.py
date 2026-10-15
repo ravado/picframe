@@ -9,6 +9,7 @@ from picframe.video_streamer import VIDEO_EXTENSIONS, get_video_info
 
 class ImageCache:
 
+    EXIF_BACKFILL_BATCH = 50  # files per update_cache() call when filling in the exif table for older dbs
     EXTENSIONS = ['.png', '.jpg', '.jpeg', '.heif', '.heic']
     EXIF_TO_FIELD = {'EXIF FNumber': 'f_number',
                      'Image Make': 'make',
@@ -40,7 +41,9 @@ class ImageCache:
         self.__db = self.__create_open_db(self.__db_file)
         self.__db_write_lock = threading.Lock()  # lock to serialize db writes between threads
         # NB this is where the required schema is set
-        self.__update_schema(3)
+        self.__update_schema(4)
+        self.__exif_backfill_done = False
+        self.__exif_backfill_cursor = 0  # highest file_id looked at, so files missing right now aren't retried
 
         self.__keep_looping = True
         self.__pause_looping = False
@@ -96,6 +99,8 @@ class ImageCache:
         if not self.__modified_files:
             self.__update_folder_info(self.__modified_folders)
             self.__modified_folders.clear()
+            if not self.__exif_backfill_done and not self.__pause_looping:
+                self.__backfill_exif()
 
         # If looping is still not paused, remove any files or folders from the db that are no longer on disk
         if not self.__pause_looping:
@@ -358,6 +363,23 @@ class ImageCache:
                 self.__db.execute("ALTER TABLE file ADD COLUMN displayed_count INTEGER default 0 NOT NULL")
                 self.__db.execute("ALTER TABLE file ADD COLUMN last_displayed REAL DEFAULT 0 NOT NULL")
 
+            if schema_version <= 3:
+                # Migrate to db schema v4
+                # Keep every EXIF tag as JSON, so new features can query tags without another schema
+                # change or rescan. Files already in the db are filled in by __backfill_exif().
+                self.__db.execute("""
+                    CREATE TABLE IF NOT EXISTS exif (
+                        file_id INTEGER NOT NULL PRIMARY KEY,
+                        json TEXT NOT NULL
+                    )""")
+                self.__db.execute("""
+                    CREATE TRIGGER IF NOT EXISTS Clean_Exif_Trigger
+                    AFTER DELETE ON file
+                    FOR EACH ROW
+                    BEGIN
+                        DELETE FROM exif WHERE file_id = OLD.file_id;
+                    END""")
+
             # Finally, update the db's schema version stamp to the app's requested version
             self.__db.execute('DELETE FROM db_info')
             self.__db.execute('INSERT INTO db_info VALUES(?)', (required_db_schema_version,))
@@ -377,6 +399,9 @@ class ImageCache:
                     continue  # ignore hidden folders
             mod_tm = int(os.stat(dir).st_mtime)
             found = self.__db.execute(sql_select, (dir,)).fetchone()
+            if found and found['missing'] == 1:  # e.g. a share is back: fill in EXIF it missed
+                self.__exif_backfill_done = False
+                self.__exif_backfill_cursor = 0
             if not found or found['last_modified'] < mod_tm or found['missing'] == 1:
                 out_of_date_folders.append((dir, mod_tm))
         return out_of_date_folders
@@ -410,6 +435,9 @@ class ImageCache:
         # Insert the new folder if it's not already in the table. Update the missing field separately.
         folder_insert = "INSERT OR IGNORE INTO folder(name) VALUES(?)"
         folder_update = "UPDATE folder SET missing = 0 where name = ?"
+        exif_insert = """INSERT OR REPLACE INTO exif(file_id, json) SELECT file_id, ? FROM file
+                            WHERE folder_id = (SELECT folder_id FROM folder WHERE name = ?)
+                            AND basename = ? AND extension = ?"""
 
         mod_tm = os.path.getmtime(file)
         dir, file_only = os.path.split(file)
@@ -420,8 +448,10 @@ class ImageCache:
         ext = os.path.splitext(file)[1].lower()
         if ext in VIDEO_EXTENSIONS: # no exif info available
             meta = self.__get_video_info(file)
+            exif_json = '{}'
         else:
             meta = self.__get_exif_info(file)
+            exif_json = meta.pop('exif_json')
         meta_insert = self.__get_meta_sql_from_dict(meta)
         vals = list(meta.values())
         vals.insert(0, file)
@@ -438,7 +468,35 @@ class ImageCache:
             self.__db.execute(meta_insert, vals)
         except:
             self.__logger.error(f"###FAILED meta_insert = {meta_insert}, vals = {vals}")
+        self.__db.execute(exif_insert, (exif_json, dir, base, extension.lstrip(".")))
         self.__db_write_lock.release()
+
+    def __backfill_exif(self):
+        # Fill in the exif table for files added before db schema v4, a batch at a time so the
+        # slideshow keeps running. It resumes after a restart as it just looks for missing rows.
+        sql = """SELECT file_id, fname FROM all_data WHERE file_id > ? AND file_id NOT IN (SELECT file_id FROM exif)
+                 ORDER BY file_id LIMIT ?"""
+        rows = self.__db.execute(sql, (self.__exif_backfill_cursor, ImageCache.EXIF_BACKFILL_BATCH)).fetchall()
+        if not rows:
+            self.__exif_backfill_done = True  # new and changed files get their row in __insert_file
+            return
+        for row in rows:
+            if self.__pause_looping:
+                break
+            if os.path.splitext(row['fname'])[1].lower() in VIDEO_EXTENSIONS:
+                with self.__db_write_lock:  # no EXIF in videos, so don't run ffprobe again
+                    self.__db.execute("INSERT OR REPLACE INTO exif(file_id, json) VALUES(?, '{}')", (row['file_id'],))
+            elif os.path.isfile(row['fname']):
+                try:
+                    self.__insert_file(row['fname'], row['file_id'])
+                except Exception as e:
+                    self.__logger.warning("Failed to read EXIF of %s: %s", row['fname'], e)
+            # a file missing right now (e.g. share not mounted yet) is tried again after a restart
+            # or when its folder changes, as no row is written for it
+            self.__exif_backfill_cursor = row['file_id']
+        remaining = self.__db.execute(
+            "SELECT count(*) FROM all_data WHERE file_id NOT IN (SELECT file_id FROM exif)").fetchone()[0]
+        self.__logger.info("EXIF backfill: %d files without EXIF data", remaining)
 
     def __update_folder_info(self, folder_collection):
         update_data = []
@@ -534,6 +592,8 @@ class ImageCache:
         e['tags'] = exifs.get_exif('IPTC Keywords')
         e['title'] = exifs.get_exif('IPTC Object Name')
         e['caption'] = exifs.get_exif('IPTC Caption/Abstract')
+
+        e['exif_json'] = get_image_meta.tags_to_json(exifs.get_all_tags())  # stored in the exif table, not meta
 
         return e
 
