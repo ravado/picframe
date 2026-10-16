@@ -100,6 +100,8 @@ class ViewerDisplay:
         self.__matter = None
         self.__prev_clock_time = None
         self.__clock_overlay = None
+        self.__memory_label = None  # "N years ago" on an On This Day memory, shown for the whole slide
+        self.__memory_label_old = None  # label of the previous slide while it fades out
         self.__show_clock = config['show_clock']
         self.__clock_justify = config['clock_justify']
         self.__clock_text_sz = config['clock_text_sz']
@@ -382,11 +384,7 @@ class ViewerDisplay:
         # if side 0 and pair False then this is a full width text and put into
         # __textblocks[0] otherwise it is half width and put into __textblocks[position]
         info_strings = []
-        years_ago = getattr(pic, 'years_ago', None)
-        if pic is not None and (self.__show_text > 0 or paused or years_ago):  # was SHOW_TEXT_TM > 0.0
-            if years_ago:  # On This Day memory, always labelled
-                info_strings.append(memories.years_ago_text(years_ago, self.__memories_text_one,
-                                                            self.__memories_text_other))
+        if pic is not None and (self.__show_text > 0 or paused):  # was SHOW_TEXT_TM > 0.0
             if (self.__show_text & 1) == 1 and pic.title is not None:  # title
                 info_strings.append(pic.title)
             if (self.__show_text & 2) == 2 and pic.caption is not None:  # caption
@@ -438,6 +436,26 @@ class ViewerDisplay:
         if side == 0:
             self.__textblocks[1] = None
         self.__textblocks[side] = block
+
+    def __make_memory_label(self, pic):
+        years_ago = getattr(pic, 'years_ago', None)
+        if not years_ago:
+            return None
+        text = memories.years_ago_text(years_ago, self.__memories_text_one, self.__memories_text_other)
+        # top edge, on the side away from the clock, with the same margins as the clock
+        justify = "R" if self.__clock_justify == "L" else "L"
+        wdt_offset = int(self.__display.width * self.__clock_wdt_offset_pct / 100)
+        hgt_offset = int(self.__display.height * self.__clock_hgt_offset_pct / 100)
+        width = self.__display.width - wdt_offset
+        opacity = int(255 * float(self.__text_opacity))
+        label = pi3d.FixedString(self.__font_file, text, font_size=self.__show_text_sz, shader=self.__flat_shader,
+                                 width=width, shadow_radius=3, justify=justify, color=(255, 255, 255, opacity))
+        x = (width - label.sprite.width) // 2
+        if justify == "L":
+            x *= -1
+        y = (self.__display.height - label.sprite.height + self.__show_text_sz * 0.5 - hgt_offset) // 2
+        label.sprite.position(x, y, 0.1)
+        return label
 
     def __draw_clock(self):
         current_time = datetime.now().strftime(self.__clock_format)
@@ -644,6 +662,10 @@ class ViewerDisplay:
             else:  # could have a NO IMAGES selected and being drawn
                 for block in range(2):
                     self.__textblocks[block] = None
+            # unlike the text above, this doesn't depend on show_text or show_text_tm: it shows for the whole
+            # slide and fades in and out with the photo
+            self.__memory_label_old = self.__memory_label
+            self.__memory_label = self.__make_memory_label(pics[0])
 
             if self.__sbg is None:  # first time through
                 self.__sbg = self.__sfg
@@ -697,6 +719,17 @@ class ViewerDisplay:
 
         self.__slide.draw()
         self.__draw_overlay()
+        # memory labels fade in and out with their photo, using the same curve as the slide transition
+        fade = self.__slide.unif[44] if self.__alpha < 1.0 else 1.0
+        if self.__memory_label_old is not None:
+            if self.__alpha < 1.0:
+                self.__memory_label_old.sprite.set_alpha((1.0 - fade) * self.get_brightness())
+                self.__memory_label_old.sprite.draw()
+            else:
+                self.__memory_label_old = None
+        if self.__memory_label is not None:
+            self.__memory_label.sprite.set_alpha(fade * self.get_brightness())
+            self.__memory_label.sprite.draw()
         if self.clock_is_on:
             self.__draw_clock()
 

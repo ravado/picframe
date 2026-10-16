@@ -5,6 +5,7 @@ import shutil
 import sqlite3
 import time
 from datetime import date, datetime
+from types import SimpleNamespace
 
 import pytest
 from PIL.TiffImagePlugin import IFDRational
@@ -330,3 +331,149 @@ def test_backfill_gets_past_missing_files_with_photos_in_subfolders(tmp_path, mo
         wait_for(lambda: list(exif_rows(db_file)) == [names[3]], timeout=10)
     finally:
         cache.stop()
+
+
+def test_insert_failure_releases_db_lock(tmp_path):
+    pic_dir = tmp_path / "pics"
+    pic_dir.mkdir()
+    shutil.copy(os.path.join(IMAGES, "AlleExif.JPG"), pic_dir / "a.jpg")
+    db_file = str(tmp_path / "db.db3")
+    cache = image_cache.ImageCache(str(pic_dir), False, db_file, None, 0.05)
+    try:
+        wait_for(lambda: len(exif_rows(db_file)) == 1)
+        cache.pause_looping(True)
+        time.sleep(0.2)
+        cache._ImageCache__db.execute("DROP TABLE exif")  # any sqlite error inside the insert
+        with pytest.raises(sqlite3.Error):
+            cache._ImageCache__insert_file(str(pic_dir / "a.jpg"))
+        lock = cache._ImageCache__db_write_lock
+        released = lock.acquire(timeout=1)
+        lock.release()  # either way, so stop() below can finish instead of hanging the test run
+        assert released, "db write lock left held, the next write would hang"
+    finally:
+        cache.pause_looping(False)
+        cache.stop()
+
+
+def test_changed_file_keeps_file_id_and_one_exif_row(tmp_path):
+    pic_dir = tmp_path / "pics"
+    pic_dir.mkdir()
+    photo = pic_dir / "a.jpg"
+    shutil.copy(os.path.join(IMAGES, "AlleExif.JPG"), photo)
+    db_file = str(tmp_path / "db.db3")
+    cache = image_cache.ImageCache(str(pic_dir), False, db_file, None, 0.05)
+    try:
+        wait_for(lambda: len(exif_rows(db_file)) == 1)
+        for i in range(1, 4):  # the file is edited three times
+            t = time.time() + 10 * i
+            os.utime(photo, (t, t))
+            os.utime(pic_dir, (t, t))
+            wait_for(lambda: sqlite3.connect(db_file).execute("SELECT last_modified FROM file").fetchone()[0] == t)
+    finally:
+        cache.stop()
+    db = sqlite3.connect(db_file)
+    assert db.execute("SELECT file_id FROM file").fetchall() == [(1,)]
+    assert db.execute("SELECT count(*) FROM exif").fetchone()[0] == 1
+    assert db.execute("SELECT count(*) FROM meta").fetchone()[0] == 1
+    db.close()
+
+
+def test_backfill_retries_file_after_read_error(tmp_path, monkeypatch):
+    monkeypatch.setattr(image_cache.ImageCache, "EXIF_BACKFILL_RETRY", 0.3)
+    pic_dir = tmp_path / "pics"
+    pic_dir.mkdir()
+    photo = str(pic_dir / "a.jpg")
+    shutil.copy(os.path.join(IMAGES, "AlleExif.JPG"), photo)
+    db_file = str(tmp_path / "db.db3")
+    cache = image_cache.ImageCache(str(pic_dir), False, db_file, None, 0.05)
+    try:
+        wait_for(lambda: len(exif_rows(db_file)) == 1)
+    finally:
+        cache.stop()
+    db = sqlite3.connect(db_file)
+    db.execute("DELETE FROM exif")  # as if upgraded from v3
+    db.commit()
+    db.close()
+
+    real_getmtime = os.path.getmtime
+    failures = []
+
+    def getmtime_failing_once(path):
+        if path == photo and not failures:
+            failures.append(path)
+            raise OSError("I/O error")
+        return real_getmtime(path)
+    monkeypatch.setattr(image_cache.os.path, "getmtime", getmtime_failing_once)
+    cache = image_cache.ImageCache(str(pic_dir), False, db_file, None, 0.05)
+    try:
+        wait_for(lambda: len(exif_rows(db_file)) == 1)  # filled in by the retry pass
+    finally:
+        cache.stop()
+    assert failures == [photo]
+
+
+# --- "N years ago" label in the viewer ---
+
+class FakeSprite:
+    def __init__(self, width, height):
+        self.width, self.height = width, height
+        self.pos = None
+
+    def position(self, x, y, z):
+        self.pos = (x, y)
+
+    def set_alpha(self, alpha):
+        pass
+
+
+class FakeFixedString:
+    made = []
+
+    def __init__(self, font, text, font_size, justify="C", **kwargs):
+        self.text, self.justify = text, justify
+        self.sprite = FakeSprite(len(text) * font_size // 2, font_size)
+        FakeFixedString.made.append(self)
+
+
+class FakeDisplay:
+    width, height = 1920, 1080
+
+
+@pytest.fixture
+def viewer(monkeypatch):
+    viewer_display = pytest.importorskip("picframe.viewer_display")  # needs pi3d and GLES libraries
+    monkeypatch.setattr(viewer_display.pi3d, "FixedString", FakeFixedString)
+    FakeFixedString.made = []
+
+    def factory(**config):
+        cfg = dict(model.DEFAULT_CONFIG['viewer'])
+        cfg.update(config)
+        v = viewer_display.ViewerDisplay(cfg)
+        v._ViewerDisplay__display = FakeDisplay()
+        v._ViewerDisplay__flat_shader = None
+        v._ViewerDisplay__textblocks = [None, None]
+        v._ViewerDisplay__slide = SimpleNamespace(unif=[1.0] * 60)  # brightness is unif[55]
+        return v
+    return factory
+
+
+def memory_pic(years):
+    pic = model.Pic("/pics/2023/a.jpg", 0, 1, exif_datetime=local_epoch(2023, 10, 15, 12, 0))
+    pic.years_ago = years
+    return pic
+
+
+def test_memory_label_is_its_own_text_away_from_the_clock(viewer):
+    v = viewer(show_text="", show_text_tm=0.0, clock_justify="R")
+    label = v._ViewerDisplay__make_memory_label(memory_pic(3))
+    assert label.text == "3 years ago" and label.justify == "L"
+    x, y = label.sprite.pos
+    assert x < 0 and y > 0  # top left
+    assert viewer(clock_justify="L")._ViewerDisplay__make_memory_label(memory_pic(1)).justify == "R"
+    assert v._ViewerDisplay__make_memory_label(model.Pic("/pics/b.jpg", 0, 2)) is None  # not a memory
+
+
+def test_memory_label_not_part_of_fading_text(viewer):
+    v = viewer(show_text="name")
+    v._ViewerDisplay__make_text(memory_pic(3), False)
+    assert [f.text for f in FakeFixedString.made] == ["a.jpg"]
