@@ -64,7 +64,8 @@ class ViewerDisplay:
         self.__text_bkg_hgt = config['text_bkg_hgt'] if 0 <= config['text_bkg_hgt'] <= 1 else 0.25
         self.__text_opacity = config['text_opacity']
         self.__camera_text_sz = config['camera_text_sz']
-        self.__camera_text_opacity = config['camera_text_opacity']
+        self.__camera_text_opacity = (config['camera_text_opacity']
+                                      if 0 <= config['camera_text_opacity'] <= 1 else 0.4)
         self.__fit = config['fit']
         self.__video_fit_display = config['video_fit_display']
         self.__geo_suppress_list = config['geo_suppress_list']
@@ -458,7 +459,7 @@ class ViewerDisplay:
 
         camera_string = ""
         if pic is not None and (self.__show_text & 64) == 64 and pic.model:  # camera
-            camera_string = pic.model.strip()
+            camera_string = pic.model.strip(" \x00")  # EXIF strings can be NUL padded
 
         if side == 0 and not pair:  # full width replaces right side; pause only refreshes side 0 of a pair
             self.__textblocks[1] = None
@@ -466,7 +467,11 @@ class ViewerDisplay:
         # camera line takes the bottom slot, info line sits above it
         camera_block = self.__make_text_block(camera_string, side, pair, self.__camera_text_sz,
                                               self.__camera_text_opacity, 0)
-        offset = camera_block.sprite.height if camera_block is not None else 0
+        # fixed slot height so both sides of a pair line up; reserved in pairs even without a model
+        # ponytail: 1.5 x font size approximates FixedString height, tune if lines overlap or gap
+        offset = 0
+        if camera_block is not None or (pair and (self.__show_text & 64) == 64):
+            offset = int(self.__camera_text_sz * 1.5)
         self.__textblocks[side] = self.__make_text_block(final_string, side, pair, self.__show_text_sz, 1.0, offset)
         self.__textblocks[side + 2] = camera_block
 
