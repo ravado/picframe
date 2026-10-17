@@ -441,7 +441,10 @@ class FakeDisplay:
 
 @pytest.fixture
 def viewer(monkeypatch):
-    viewer_display = pytest.importorskip("picframe.viewer_display")  # needs pi3d and GLES libraries
+    try:
+        from picframe import viewer_display
+    except Exception as e:  # pi3d raises AttributeError, not ImportError, when the GLES library is missing
+        pytest.skip("picframe.viewer_display needs pi3d and the GLES library: {}".format(e))
     monkeypatch.setattr(viewer_display.pi3d, "FixedString", FakeFixedString)
     FakeFixedString.made = []
 
