@@ -1056,5 +1056,6 @@ class ViewerDisplay:
     def slideshow_stop(self):
         if self.__video_streamer is not None:
             self.__video_streamer.kill()
-        self.__sensors_data.stop()
+        if self.__sensors_data is not None:  # only created when show_sensors is on and the libraries load
+            self.__sensors_data.stop()
         self.__display.destroy()

@@ -567,3 +567,14 @@ def test_queue_lists_memories_again_when_memories_are_turned_off(make_model):
     assert [10] not in [slot["file_ids"] for slot in m.get_queue_snapshot()["upcoming_slots"]]
     m.memories = False
     assert [10] in [slot["file_ids"] for slot in m.get_queue_snapshot()["upcoming_slots"]]
+
+
+# --- shutdown with sensors off (develop) ---
+
+def test_slideshow_stop_with_sensors_off(viewer):
+    from unittest.mock import MagicMock
+    v = viewer(show_sensors=False)
+    display = MagicMock()
+    v._ViewerDisplay__display = display
+    v.slideshow_stop()  # used to raise AttributeError on the missing sensor reader
+    display.destroy.assert_called_once()
