@@ -16,7 +16,7 @@ dpms_mode = ("unsupported", "pi", "x_dpms")
 
 # utility functions with no dependency on ViewerDisplay properties
 def txt_to_bit(txt):
-    txt_map = {"title": 1, "caption": 2, "name": 4, "date": 8, "location": 16, "folder": 32}
+    txt_map = {"title": 1, "caption": 2, "name": 4, "date": 8, "location": 16, "folder": 32, "camera": 64}
     if txt in txt_map:
         return txt_map[txt]
     return 0
@@ -25,7 +25,7 @@ def txt_to_bit(txt):
 def parse_show_text(txt):
     show_text = 0
     txt = txt.lower()
-    for txt_key in ("title", "caption", "name", "date", "location", "folder"):
+    for txt_key in ("title", "caption", "name", "date", "location", "folder", "camera"):
         if txt_key in txt:
             show_text |= txt_to_bit(txt_key)
     return show_text
@@ -63,6 +63,9 @@ class ViewerDisplay:
         self.__text_justify = config['text_justify'].upper()
         self.__text_bkg_hgt = config['text_bkg_hgt'] if 0 <= config['text_bkg_hgt'] <= 1 else 0.25
         self.__text_opacity = config['text_opacity']
+        self.__camera_text_sz = config['camera_text_sz']
+        self.__camera_text_opacity = (config['camera_text_opacity']
+                                      if 0 <= config['camera_text_opacity'] <= 1 else 0.4)
         self.__fit = config['fit']
         self.__video_fit_display = config['video_fit_display']
         self.__geo_suppress_list = config['geo_suppress_list']
@@ -87,7 +90,7 @@ class ViewerDisplay:
         self.__flat_shader = None
         self.__xstep = None
         self.__ystep = None
-        self.__textblocks = [None, None]
+        self.__textblocks = [None, None, None, None]  # info L/R, camera L/R
         self.__text_bkg = None
         self.__sfg = None  # slide for background
         self.__sbg = None  # slide for foreground
@@ -454,14 +457,33 @@ class ViewerDisplay:
         if final_string:
             final_string = "[{}] {}".format(pic.displayed_count, final_string)
 
+        camera_string = ""
+        if pic is not None and (self.__show_text & 64) == 64 and pic.model:  # camera
+            camera_string = pic.model.strip(" \x00")  # EXIF strings can be NUL padded
+
+        if side == 0 and not pair:  # full width replaces right side; pause only refreshes side 0 of a pair
+            self.__textblocks[1] = None
+            self.__textblocks[3] = None
+        # camera line takes the bottom slot, info line sits above it
+        camera_block = self.__make_text_block(camera_string, side, pair, self.__camera_text_sz,
+                                              self.__camera_text_opacity, 0)
+        # fixed slot height so both sides of a pair line up; reserved in pairs even without a model
+        # ponytail: 1.5 x font size approximates FixedString height, tune if lines overlap or gap
+        offset = 0
+        if camera_block is not None or (pair and (self.__show_text & 64) == 64):
+            offset = int(self.__camera_text_sz * 1.5)
+        self.__textblocks[side] = self.__make_text_block(final_string, side, pair, self.__show_text_sz, 1.0, offset)
+        self.__textblocks[side + 2] = camera_block
+
+    def __make_text_block(self, text, side, pair, text_sz, opacity_mult, y_offset):
         block = None
-        if len(final_string) > 0:
+        if len(text) > 0:
             if side == 0 and not pair:
                 c_rng = self.__display.width - 100  # range for x loc from L to R justified
             else:
                 c_rng = self.__display.width * 0.5 - 100  # range for x loc from L to R justified
-            opacity = int(255 * float(self.__text_opacity) * self.get_brightness())
-            block = pi3d.FixedString(self.__font_file, final_string, shadow_radius=3, font_size=self.__show_text_sz,
+            opacity = int(255 * float(self.__text_opacity) * float(opacity_mult) * self.get_brightness())
+            block = pi3d.FixedString(self.__font_file, text, shadow_radius=3, font_size=text_sz,
                                      shader=self.__flat_shader, justify=self.__text_justify, width=c_rng,
                                      color=(255, 255, 255, opacity))
             adj_x = (c_rng - block.sprite.width) // 2  # half amount of space outside sprite
@@ -473,12 +495,10 @@ class ViewerDisplay:
                 x = adj_x
             else:
                 x = adj_x + int(self.__display.width * 0.25 * (-1.0 if side == 0 else 1.0))
-            y = (block.sprite.height - self.__display.height + self.__show_text_sz) // 2
+            y = (block.sprite.height - self.__display.height + text_sz) // 2 + y_offset
             block.sprite.position(x, y, 0.1)
             block.sprite.set_alpha(0.0)
-        if side == 0:
-            self.__textblocks[1] = None
-        self.__textblocks[side] = block
+        return block
 
     def __draw_clock(self):
         current_time = datetime.now().strftime(self.__clock_format)
@@ -772,7 +792,7 @@ class ViewerDisplay:
         self.__slide.unif[47] = self.__edge_alpha
         self.__slide.unif[54] = float(self.__blend_type)
         self.__slide.unif[55] = 1.0  # brightness
-        self.__textblocks = [None, None]
+        self.__textblocks = [None, None, None, None]  # info L/R, camera L/R
         self.__flat_shader = pi3d.Shader("uv_flat")
 
         if self.__text_bkg_hgt:
@@ -889,7 +909,7 @@ class ViewerDisplay:
                 for i, pic in enumerate(pics):
                     self.__make_text(pic, paused, i, pics[1] is not None)  # send even if pic is None to clear previous text # noqa: E501
             else:  # could have a NO IMAGES selected and being drawn
-                for block in range(2):
+                for block in range(4):
                     self.__textblocks[block] = None
 
             if self.__sbg is None:  # first time through
