@@ -133,6 +133,19 @@ def main():
 
     v = viewer_display.ViewerDisplay(m.get_viewer_config())
     c = controller.Controller(m, v)
+
+    # Only initialize GPIO if enabled in config
+    gpio_config = m.get_gpio_config()
+    if gpio_config.get('use_gpio', False):
+        try:
+            from picframe import gpio_actions
+            gpio_controller = gpio_actions.GpioController(c, gpio_config)
+            logger.info("GPIO controller initialized")
+        except ImportError as e:
+            logger.warning("GPIO unavailable (gpiod not installed): %s", e)
+        except Exception as e:
+            logger.warning("GPIO initialization failed: %s", e)
+
     c.start()
     c.loop()
     c.stop()

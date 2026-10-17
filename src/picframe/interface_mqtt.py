@@ -218,15 +218,20 @@ class InterfaceMQTT:
         self.__setup_sensor(client, "image", "mdi:file-image",
                             available_topic, has_attributes=True, entity_category="diagnostic")
 
+        # Only setup sensor MQTT entities if sensors available
+        if self.__controller.get_sensors_data() is not None:
+            self.__setup_sensor(client, "inside_temperature", "mdi:thermometer", available_topic, entity_category="diagnostic", unit_of_measurement="°C")
+            self.__setup_sensor(client, "inside_humidity", "mdi:water-percent", available_topic, entity_category="diagnostic", unit_of_measurement="%")
+            self.__setup_sensor(client, "inside_pressure", "mdi:cloud", available_topic, entity_category="diagnostic", unit_of_measurement="mmHg")
+            self.__setup_sensor(client, "outside_temperature", "mdi:thermometer", available_topic, entity_category="diagnostic", unit_of_measurement="°C")
+            self.__setup_sensor(client, "outside_humidity", "mdi:water-percent", available_topic, entity_category="diagnostic", unit_of_measurement="%")
+            self.__setup_sensor(client, "outside_pressure", "mdi:cloud", available_topic, entity_category="diagnostic", unit_of_measurement="mmHg")
+
         # numbers
-        self.__setup_number(client, "brightness", 0.0, 1.0, 0.1, "mdi:brightness-6",
-                            available_topic)
-        self.__setup_number(client, "time_delay", 1, 400, 1, "mdi:image-plus",
-                            available_topic)
-        self.__setup_number(client, "fade_time", 1, 50, 1, "mdi:image-size-select-large",
-                            available_topic)
-        self.__setup_number(client, "matting_images", 0.0, 1.0, 0.01, "mdi:image-frame",
-                            available_topic)
+        self.__setup_number(client, "brightness", 0.0, 1.0, 0.1, "mdi:brightness-6", available_topic)
+        self.__setup_number(client, "time_delay", 1, 3600, 1, "mdi:image-plus", available_topic)
+        self.__setup_number(client, "fade_time", 1, 50, 1, "mdi:image-size-select-large", available_topic)
+        self.__setup_number(client, "matting_images", 0.0, 1.0, 0.01, "mdi:image-frame", available_topic)
 
         # selects
         _, dir_list = self.__controller.get_directory_list()
@@ -305,7 +310,8 @@ class InterfaceMQTT:
         icon: str,
         available_topic: str,
         has_attributes: bool = False,
-        entity_category: Optional[str] = None
+        entity_category: Optional[str] = None,
+        unit_of_measurement: Optional[str] = None
     ) -> None:
         """
         Set up a sensor in Home Assistant.
@@ -339,6 +345,8 @@ class InterfaceMQTT:
             config_dict["state_topic"] = sensor_topic_head + "/state"
         if entity_category:
             config_dict["entity_category"] = entity_category
+        if unit_of_measurement:
+            config_dict["unit_of_measurement"] = unit_of_measurement
 
         config_payload = json.dumps(config_dict)
         client.publish(config_topic, config_payload, qos=0, retain=True)
@@ -806,12 +814,24 @@ class InterfaceMQTT:
         # matting_images
         sensor_state_payload["matting_images"] = self.__controller.matting_images
 
+        # Only publish sensor data if sensors available
+        sensors = self.__controller.get_sensors_data()
+        if sensors is not None:
+            inside_sensors = self.__controller.get_inside_sensors_data()
+            outside_sensors = self.__controller.get_outside_sensors_data()
+            sensor_state_payload["inside_temperature"] = inside_sensors.get("temperature", None)
+            sensor_state_payload["inside_humidity"] = inside_sensors.get("humidity", None)
+            sensor_state_payload["inside_pressure"] = inside_sensors.get("pressure", None)
+            sensor_state_payload["outside_temperature"] = outside_sensors.get("temperature", None)
+            sensor_state_payload["outside_humidity"] = outside_sensors.get("humidity", None)
+            sensor_state_payload["outside_pressure"] = outside_sensors.get("pressure", None)
+
         # publish sensors
         dir_list.sort()
         self.__setup_select(self.__client, "directory", dir_list,
                             "mdi:folder-multiple-image", available_topic, init=False)
 
-        self.__logger.info("Send sensor state: %s", sensor_state_payload)
+        self.__logger.debug("Send sensor state: %s", sensor_state_payload)
         sensor_state_topic = sensor_topic_head + "/state"
         self.__client.publish(sensor_state_topic, json.dumps(sensor_state_payload),
                               qos=0, retain=False)

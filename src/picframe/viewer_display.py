@@ -54,6 +54,7 @@ class ViewerDisplay:
         self.__background = config['background']
         self.__blend_type = {"blend": 0.0, "burn": 1.0, "bump": 2.0}[config['blend_type']]
         self.__font_file = os.path.expanduser(config['font_file'])
+        self.__font_icon_file = os.path.expanduser(config['font_icon_file'])
         self.__shader = os.path.expanduser(config['shader'])
         self.__show_text_tm = float(config['show_text_tm'])
         self.__show_text_fm = config['show_text_fm']
@@ -113,7 +114,43 @@ class ViewerDisplay:
         self.__image_overlay = None
         self.__prev_overlay_time = None
         self.__video_streamer = None
+        self.__paused = False
+        self.__pause_start_tm = None
+
+        # [ivan] sensors configs
+        self.__show_sensors = config['show_sensors']
+        self.__prev_sensors_hash = None # [ivan] Use to check if redraw is actually needed
+        self.__sensors_overlays = None
+        self.__sensors_justify = config['sensors_justify']
+        self.__sensors_text_sz = config['sensors_text_sz']
+        self.__sensors_opacity = config['sensors_opacity']
+        self.__sensors_update_rate_in_seconds = config['sensors_update_rate_in_seconds']
+
+        # Only create SensorData if sensors enabled
+        if self.__show_sensors:
+            try:
+                from picframe import get_sensors_data
+                self.__sensors_data = get_sensors_data.SensorData(config)
+            except ImportError as e:
+                self.__logger.warning("Sensor libraries not available, disabling sensors: %s", e)
+                self.__show_sensors = False
+                self.__sensors_data = None
+        else:
+            self.__sensors_data = None
+
+        # [ivan] progress bar configs
+        self.__show_progress_bar = config['show_progress_bar']
+        self.__progress_bar_height = config['progress_bar_height']
+        self.__progress_bar_color = config['progress_bar_color']
+        self.__progress_bar_position = config['progress_bar_position']
+        self.__progress_bar_tex = None
+        self.__progress_bar_fill = None
+        self.__prev_bar_w = -1
+
         ImageFile.LOAD_TRUNCATED_IMAGES = True  # occasional damaged file hangs app
+
+    def get_sensors_data(self):
+        return self.__sensors_data  # Can be None
 
     @property
     def display_is_on(self):
@@ -245,6 +282,14 @@ class ViewerDisplay:
     @clock_is_on.setter
     def clock_is_on(self, val):
         self.__show_clock = val
+
+    @property
+    def sensors_is_on(self):
+        return self.__show_sensors
+
+    @sensors_is_on.setter
+    def sensors_is_on(self, val):
+        self.__show_sensors = val
 
     # Concatenate the specified images horizontally. Clip the taller
     # image to the height of the shorter image.
@@ -410,6 +455,8 @@ class ViewerDisplay:
             if paused:
                 info_strings.append("PAUSED")
         final_string = " • ".join(info_strings)
+        if final_string:
+            final_string = "[{}] {}".format(pic.displayed_count, final_string)
 
         block = None
         if len(final_string) > 0:
@@ -454,6 +501,8 @@ class ViewerDisplay:
         if justify == "L":
             x *= -1
         y = (self.__display.height - label.sprite.height + self.__show_text_sz * 0.5 - hgt_offset) // 2
+        if self.__show_sensors:  # the sensor values run along the top edge from the left, so go below them
+            y -= self.__sensors_text_sz + 20
         label.sprite.position(x, y, 0.1)
         return label
 
@@ -520,6 +569,209 @@ class ViewerDisplay:
             self.__image_overlay.set_alpha(self.get_brightness())
         if self.__image_overlay is not None:  # shouldn't be possible to get here otherwise, but just in case!
             self.__image_overlay.draw()
+
+
+    # [ivan] Creates a solid-color sprite for the progress bar
+    def __make_solid_bar(self, w, h, x):
+        if self.__progress_bar_tex is None:
+            r, g, b, a = self.__progress_bar_color
+            tex_arr = np.zeros((1, 1, 4), dtype=np.uint8)
+            tex_arr[0, 0] = [r, g, b, a]
+            self.__progress_bar_tex = pi3d.Texture(tex_arr, blend=True, mipmap=False, free_after_load=True)
+        bar_y = (self.__display.height - h) // 2
+        if self.__progress_bar_position == "B":
+            bar_y *= -1
+        sprite = pi3d.Sprite(w=w, h=h, x=x, y=bar_y, z=3.9)
+        sprite.set_draw_details(self.__flat_shader, [self.__progress_bar_tex])
+        return sprite
+
+    # [ivan] Draws the progress bar showing time remaining for current photo
+    def __draw_progress_bar(self, time_delay):
+        if self.__next_tm == 0.0:
+            return
+        tm = self.__pause_start_tm if self.__paused and self.__pause_start_tm is not None else time.time()
+        progress = max(0.0, min(1.0, 1.0 - (self.__next_tm - tm) / time_delay)) if time_delay > 0 else 0.0
+        bar_w = max(1, int(self.__display.width * progress))
+
+        if bar_w != self.__prev_bar_w:
+            x = bar_w // 2 - self.__display.width // 2
+            self.__progress_bar_fill = self.__make_solid_bar(
+                w=bar_w, h=self.__progress_bar_height, x=x)
+            self.__prev_bar_w = bar_w
+
+        if self.__progress_bar_fill:
+            self.__progress_bar_fill.draw()
+
+    def __sync_pause_state(self, paused):
+        tm = time.time()
+        if paused != self.__paused:
+            self.__paused = paused
+            if paused:
+                self.__pause_start_tm = tm
+            elif self.__pause_start_tm is not None:
+                paused_for = tm - self.__pause_start_tm
+                if self.__next_tm > 0.0:
+                    self.__next_tm += paused_for
+                if self.__name_tm > 0.0:
+                    self.__name_tm += paused_for
+                self.__pause_start_tm = None
+        elif paused and self.__pause_start_tm is not None:
+            return self.__pause_start_tm
+        return tm
+
+    # Draws the temperature and humidity info
+    def __draw_sensors(self):
+
+        inside_sensors = self.__sensors_data.get_last_inside_sensor_data()
+        outside_sensors = self.__sensors_data.get_last_outside_sensor_data()
+
+        inside_available = inside_sensors.get('is_online', False);
+        inside_temperature = inside_sensors.get('temperature', '-');
+        inside_humidity = inside_sensors.get('humidity', '-');
+        inside_pressure = inside_sensors.get('pressure', '-');
+        
+        outside_available = outside_sensors.get('is_online', False);
+        outside_temperature = outside_sensors.get('temperature', '-');
+        outside_humidity = outside_sensors.get('humidity', '-');
+        outside_pressure = outside_sensors.get('pressure', '-');
+
+        current_sensors_values_formatted = f"{inside_temperature}° • {inside_humidity}% • {inside_pressure} mmHg"
+        current_sensors_values_outside_formatted = f"{outside_temperature}° • {outside_humidity}%"
+
+        # Rebuild only if changed
+        
+        # Concatenate the values into a single string
+        concatenated_values = inside_temperature + inside_humidity + outside_temperature + outside_humidity
+
+        # Calculate the hash of the string
+        current_sensors_hash = hash(concatenated_values)
+        # 
+        # Now you can compare it with the previous hash
+        if self.__prev_sensors_hash != current_sensors_hash:
+            self.__logger.debug(f"Sensor data has changes, redraw it now")
+
+
+            width = self.__display.width - 50
+            
+            self.__sensors_overlays = []
+
+            sensor_inside_icon = self.__create_icon_for_sensors(
+                text="\uf015", # the house icon
+                width=width)
+
+            sensor_inside_value = self.__create_fixed_string_for_sensors(
+                text=current_sensors_values_formatted,
+                width=width)
+            
+            sensor_outside_icon = self.__create_icon_for_sensors(
+                text="\ue587", # the tree
+                width=width)
+
+            sensor_outside_value = self.__create_fixed_string_for_sensors(
+                text=current_sensors_values_outside_formatted, 
+                width=width)
+
+            # self.__logger.warning(f"Display Width: {self.__display.width}, Display Height: {self.__display.height}")
+
+            #
+            # Position of sensors texts
+            # 
+            
+            use_icons = False
+            if (inside_available and outside_available):
+                use_icons = True
+
+            y = (self.__display.height - self.__sensors_text_sz - 20) // 2
+            total_width = 0
+
+            # inside icon
+            if (use_icons):
+                total_width = self.__position_sprite(sensor_inside_icon, y, total_width, width)
+
+            # inside value
+            total_width = self.__position_sprite(sensor_inside_value, y, total_width, width)
+
+            # [ivan] this makes sure the outside sensors values will be 
+            # displayed from the start of the screen if inside data is missing
+            if (not inside_available):
+                total_width = 0
+
+            padding = 20
+
+            # outside icon
+            if (use_icons):
+                total_width = self.__position_sprite(sensor_outside_icon, y, total_width, width, padding)
+
+            # outside value
+            total_width = self.__position_sprite(sensor_outside_value, y, total_width, width, padding)
+
+            if (inside_available):
+                self.__logger.debug(f"Inside sensors available")
+
+                if (use_icons):
+                    self.__sensors_overlays.append(sensor_inside_icon)
+
+                self.__sensors_overlays.append(sensor_inside_value)
+
+            if (outside_available):
+                self.__logger.debug(f"Outside sensors available")
+                
+                if (use_icons):
+                    self.__sensors_overlays.append(sensor_outside_icon)
+                    
+                self.__sensors_overlays.append(sensor_outside_value)
+            
+            # self.__logger.warning(f"Display Width: {self.__display.width}, Display Height: {self.__display.height}")
+            # self.__logger.warning(f"sensor_inside_icon - w:{sensor_inside_icon.sprite.width}, h:{sensor_inside_value.sprite.height}")
+            
+            
+            
+            # # [ivan] No justify atm
+            # # if self.__sensors_justify == "L":
+            # #     x *= -1
+            # #     xo *= -1
+            # # elif self.__sensors_justify == "C":
+            # #     x = 0
+            # #     xo = 0
+            # y = (self.__display.height - self.__sensors_text_sz - 20) // 2
+            # # self.__sensors_overlay.sprite.position(x+self.__sensors_text_sz*3.5, y, 0.1)
+            
+            
+            self.__prev_sensors_hash = current_sensors_hash
+
+        if self.__sensors_overlays:
+            for overlay in self.__sensors_overlays:
+                overlay.sprite.draw()
+
+    def __position_sprite(self, sprite_to_position, y, total_width, width, padding=0):
+        x = ((width - sprite_to_position.sprite.width) // 2) - padding - total_width
+        x_with_adjustments = x * -1
+        sprite_to_position.sprite.position(x_with_adjustments, y, 0.1)
+        return total_width + sprite_to_position.sprite.width
+
+    def __create_fixed_string_for_sensors(self, text, width):
+        result = pi3d.FixedString(
+            self.__font_file, 
+            text,
+            font_size=self.__sensors_text_sz,
+            shader=self.__flat_shader, 
+            width=width,
+            shadow_radius=3,
+            color=(255, 255, 255, int(255 * float(self.__sensors_opacity))))
+        
+        return result
+    
+    def __create_icon_for_sensors(self, text, width):
+        result = pi3d.FixedString(
+            self.__font_icon_file, 
+            text,
+            font_size=self.__sensors_text_sz,
+            shader=self.__flat_shader, 
+            width=width,
+            shadow_radius=3,
+            color=(255, 255, 255, int(255 * float(self.__sensors_opacity))))
+        
+        return result
 
     @property
     def display_width(self):
@@ -617,6 +869,9 @@ class ViewerDisplay:
             - Whether to skip the current image.
             - Whether a video is currently playing.
         """
+        if self.sensors_is_on:
+            self.__draw_sensors()
+
         loop_running = self.__display.loop_running()
         # if video is playing, we are done here
         video_playing = False
@@ -630,7 +885,7 @@ class ViewerDisplay:
             self.__slide.draw()
             return (loop_running, False, video_playing)  # now returns tuple with skip image flag and video_time added
 
-        tm = time.time()
+        tm = self.__sync_pause_state(paused)
         if pics is not None:
             self.stop_video()
             if pics[0] and os.path.splitext(pics[0].fname)[1].lower() in VIDEO_EXTENSIONS:
@@ -693,7 +948,7 @@ class ViewerDisplay:
             self.__slide.unif[48] = self.__slide.unif[48] * 0.95 + self.__xstep * t_factor * 0.05
             self.__slide.unif[49] = self.__slide.unif[49] * 0.95 + self.__ystep * t_factor * 0.05
 
-        if self.__alpha < 1.0:  # transition is happening
+        if self.__alpha < 1.0 and not paused:  # transition is happening
             self.__alpha += self.__delta_alpha
             if self.__alpha > 1.0:
                 self.__alpha = 1.0
@@ -730,6 +985,8 @@ class ViewerDisplay:
         if self.__memory_label is not None:
             self.__memory_label.sprite.set_alpha(fade * self.get_brightness())
             self.__memory_label.sprite.draw()
+        if self.__show_progress_bar:
+            self.__draw_progress_bar(time_delay)
         if self.clock_is_on:
             self.__draw_clock()
 
@@ -799,4 +1056,5 @@ class ViewerDisplay:
     def slideshow_stop(self):
         if self.__video_streamer is not None:
             self.__video_streamer.kill()
+        self.__sensors_data.stop()
         self.__display.destroy()

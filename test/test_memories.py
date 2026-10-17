@@ -121,6 +121,9 @@ class FakeImageCache:
         return {"fname": os.path.join(self.pic_dir, "{}.jpg".format(file_id)),
                 "last_modified": 0, "file_id": file_id, "exif_datetime": 1}
 
+    def get_file_info_readonly(self, file_id):
+        return self.get_file_info(file_id)
+
     def stop(self):
         pass
 
@@ -137,7 +140,7 @@ def make_model(tmp_path, monkeypatch):
         config = tmp_path / "config.yaml"
         config.write_text(
             "viewer: {}\n"
-            "mqtt: {}\nhttp: {}\nperipherals: {}\n"
+            "mqtt: {}\nhttp: {}\nperipherals: {}\ngpio: {}\n"
             "model:\n"
             "  pic_dir: '%s'\n  db_file: '%s'\n  shuffle: False\n  recent_n: 0\n"
             "  memories: %s\n  memories_every: %d\n"
@@ -246,11 +249,11 @@ def test_image_cache_stores_exif_json_and_backfills_old_db(tmp_path):
     assert json.loads(rows["AlleExif"])["EXIF DateTimeOriginal"].startswith("20")
     assert "EXIF DateTimeOriginal" not in json.loads(rows["noimage"])
 
-    # turn it back into a v3 db with play stats, as on an existing frame
+    # turn it back into a v5 db with play stats, as on an existing frame
     db = sqlite3.connect(db_file)
     db.execute("DROP TRIGGER Clean_Exif_Trigger")
     db.execute("DROP TABLE exif")
-    db.execute("UPDATE db_info SET schema_version = 3")
+    db.execute("UPDATE db_info SET schema_version = 5")
     db.execute("UPDATE file SET displayed_count = 5, last_displayed = 123")
     ids_before = dict(db.execute("SELECT basename, file_id FROM file").fetchall())
     db.commit()
@@ -263,7 +266,7 @@ def test_image_cache_stores_exif_json_and_backfills_old_db(tmp_path):
     finally:
         cache.stop()
     db = sqlite3.connect(db_file)
-    assert db.execute("SELECT schema_version FROM db_info").fetchone()[0] == 4
+    assert db.execute("SELECT schema_version FROM db_info").fetchone()[0] == 6
     assert dict(db.execute("SELECT basename, file_id FROM file").fetchall()) == ids_before
     assert db.execute("SELECT DISTINCT displayed_count, last_displayed FROM file").fetchall() == [(5, 123)]
     db.close()
@@ -479,7 +482,8 @@ def test_memory_label_is_its_own_text_away_from_the_clock(viewer):
 def test_memory_label_not_part_of_fading_text(viewer):
     v = viewer(show_text="name")
     v._ViewerDisplay__make_text(memory_pic(3), False)
-    assert [f.text for f in FakeFixedString.made] == ["a.jpg"]
+    texts = [f.text for f in FakeFixedString.made]
+    assert len(texts) == 1 and "a.jpg" in texts[0] and "years ago" not in texts[0]
 
 
 # --- "memories today" status for the web page and Home Assistant ---
@@ -535,3 +539,31 @@ def test_http_sends_memories_today(tmp_path):
     finally:
         server.shutdown()
         server.server_close()
+
+
+# --- web queue panel (develop) with memories ---
+
+def test_queue_leaves_out_todays_memories_and_refuses_jumping_to_one(make_model):
+    m, _ = make_model([1, 2, 10, 3, 4], [(10, "2023", 0)], every=100)
+    assert next_shown(m, 2) == [(1, None), (2, None)]
+    snapshot = m.get_queue_snapshot(limit=8)
+    assert [slot["file_ids"] for slot in snapshot["upcoming_slots"]] == [[3], [4], [1], [2]]
+    assert m.set_next_file_index(2) == (False, "memory")  # slot 2 only holds the memory
+    assert m.set_next_file_index(3) == (True, "ok")
+    assert next_shown(m, 1) == [(3, None)]
+
+
+def test_queue_while_a_memory_is_shown(make_model):
+    m, _ = make_model([1, 2, 3], [(10, "2023", 0)], every=2)
+    assert next_shown(m, 2) == [(1, None), (10, 3)]
+    snapshot = m.get_queue_snapshot()
+    assert snapshot["showing_memory"] is True and snapshot["current_slot"] is None
+    assert [slot["file_ids"] for slot in snapshot["upcoming_slots"]][0] == [2]
+
+
+def test_queue_lists_memories_again_when_memories_are_turned_off(make_model):
+    m, _ = make_model([1, 2, 10, 3], [(10, "2023", 0)], every=100)
+    next_shown(m, 1)
+    assert [10] not in [slot["file_ids"] for slot in m.get_queue_snapshot()["upcoming_slots"]]
+    m.memories = False
+    assert [10] in [slot["file_ids"] for slot in m.get_queue_snapshot()["upcoming_slots"]]

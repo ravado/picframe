@@ -5,6 +5,7 @@ import time
 import signal
 import sys
 import ssl
+import threading
 
 
 def make_date(txt):
@@ -56,7 +57,7 @@ class Controller:
         self.__date_to = make_date('2038/1/1')
         self.__where_clauses = {}
         self.__sort_clause = "exif_datetime ASC"
-        self.publish_state = lambda x, y: None
+        self.publish_state = lambda x=None, y=None: None
         self.keep_looping = True
         self.__interface_peripherals = None
         self.__interface_mqtt = None
@@ -320,6 +321,22 @@ class Controller:
         (pic, _) = self.__model.get_current_pics()
         return pic.fname
 
+    def get_queue_snapshot(self, limit=8):
+        return self.__model.get_queue_snapshot(limit=limit)
+
+    def get_queue_thumb_source(self, index):
+        return self.__model.get_queue_thumb_source(index)
+
+    def jump_to_queue_index(self, index):
+        success, reason = self.__model.set_next_file_index(index)
+        if success:
+            if self.__viewer.is_video_playing():
+                self.__viewer.stop_video()
+            self.__next_tm = 0
+            self.__force_navigate = True
+            self.__viewer.reset_name_tm()
+        return {"ok": success, "reason": reason}
+
     def loop(self):  # TODO exit loop gracefully and call image_cache.stop()
         # catch ctrl-c
         signal.signal(signal.SIGINT, self.__signal_handler)
@@ -350,6 +367,7 @@ class Controller:
                             field_name = self.__model.EXIF_TO_FIELD[key]
                             image_attr[key] = pics[0].__dict__[field_name]  # TODO nicer using namedtuple for Pic
                     if self.__mqtt_config['use_mqtt']:
+                        image_attr['times_shown'] = pics[0].displayed_count + 1
                         self.publish_state(pics[0].fname, image_attr)
             self.__model.pause_looping = self.__viewer.is_in_transition()
             (loop_running, skip_image, video_playing) = self.__viewer.slideshow_is_running(pics, time_delay, fade_time, self.__paused)
@@ -367,7 +385,7 @@ class Controller:
         from picframe.interface_peripherals import InterfacePeripherals
         self.__interface_peripherals = InterfacePeripherals(self.__model, self.__viewer, self)
 
-        # start mqtt
+        # start mqtt in a separate thread
         if self.__mqtt_config['use_mqtt']:
             from picframe import interface_mqtt
             try:
@@ -396,6 +414,58 @@ class Controller:
                                                 keyfile=self.__http_config['keyfile'],
                                                 certfile=self.__http_config['certfile'],
                                                 server_side=True)
+
+        # Subscribe to sensors updates only if available
+        sensors = self.__viewer.get_sensors_data()
+        if sensors is not None:
+            sensors.subscribe_to_sensors_updates(self.handle_temperature_update)
+
+    def connect_mqtt(self):
+        from picframe import interface_mqtt
+        max_retries = 10
+        initial_retry_delay = 60  # Initial delay in seconds (1 minute)
+        max_retry_delay = 1200   # Maximum delay in seconds (20 minutes)
+        retry_delay = initial_retry_delay
+
+        for attempt in range(max_retries):
+            if not self.keep_looping:
+                self.__logger.info("MQTT connection thread is stopping as requested.")
+                break
+
+            try:
+                self.__interface_mqtt = interface_mqtt.InterfaceMQTT(self, self.__mqtt_config)
+                self.__interface_mqtt.start()
+                self.__logger.info("MQTT connected successfully.")
+                break
+            except Exception as e:
+                self.__logger.error(f"Attempt {attempt + 1}/{max_retries}: Can't initialize mqtt - {e}")
+                if attempt < max_retries - 1 and self.keep_looping:
+                    self.__logger.info(f"Retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                    retry_delay = min(retry_delay * 2, max_retry_delay)  # Exponential increase in delay
+            else:
+                self.__logger.error("Max retries reached or stop requested. MQTT not connected.")
+                break
+
+    def get_sensors_data(self):
+        return self.__viewer.get_sensors_data()
+
+    def get_inside_sensors_data(self):
+        sensors = self.__viewer.get_sensors_data()
+        if sensors is not None:
+            return sensors.get_last_inside_sensor_data()
+        return {"is_online": False, "temperature": None, "humidity": None, "pressure": None}
+
+    def get_outside_sensors_data(self):
+        sensors = self.__viewer.get_sensors_data()
+        if sensors is not None:
+            return sensors.get_last_outside_sensor_data()
+        return {"is_online": False, "temperature": None, "humidity": None, "pressure": None}
+
+    def handle_temperature_update(self):
+        temp = self.__viewer.get_sensors_data().get_last_inside_sensor_data()
+        # print(f"Temperature updated: {temp}")
+        self.publish_state()
 
     def stop(self):
         self.keep_looping = False

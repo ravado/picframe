@@ -1,0 +1,15 @@
+# Photo Frame Aliases
+# 1. nano ~/.zshrc 
+# 2. copy - paste
+# 3. source ~/.zshrc
+
+alias copyLogsBatanovy='scp ivan.cherednychok@10.0.0.101:/home/ivan.cherednychok/picframe/picframe_data/log.txt /Users/ivan.cherednychok/Documents/PhotoFrameLogs/batanovyLog.txt'
+alias copyCronLogsBatanovy='scp ivan.cherednychok@10.0.0.101:/home/ivan.cherednychok/picframe/picframe_data/cron_log.txt /Users/ivan.cherednychok/Documents/PhotoFrameLogs/batanovyCronLog.txt'
+
+alias copyLogsCherednychoks='scp ivan.cherednychok@10.0.0.102:/home/ivan.cherednychok/picframe/picframe_data/log.txt /Users/ivan.cherednychok/Documents/PhotoFrameLogs/cherednychoksLog.txt'
+alias copyCronLogsCherednychoks='scp ivan.cherednychok@10.0.0.102:/home/ivan.cherednychok/picframe/picframe_data/cron_log.txt /Users/ivan.cherednychok/Documents/PhotoFrameLogs/cherednychoksCronLog.txt'
+
+alias copyLogsHome='scp ivan.cherednychok@192.168.91.103:/home/ivan.cherednychok/picframe/picframe_data/log.txt /Users/ivan.cherednychok/Documents/PhotoFrameLogs/homeLog.txt'
+alias copyCronLogsHome='scp ivan.cherednychok@192.168.91.103:/home/ivan.cherednychok/picframe/picframe_data/cron_log.txt /Users/ivan.cherednychok/Documents/PhotoFrameLogs/homeCronLog.txt'
+
+alias copyAllPhotoFramesLogs='copyLogsBatanovy; copyCronLogsBatanovy; copyLogsCherednychoks; copyCronLogsCherednychoks; copyLogsHome; copyCronLogsHome'

@@ -45,7 +45,21 @@ dependencies = [
     "ninepatch>=0.2.0",
     "pi_heif>=0.8.0",
     "python-vlc",
+    "jinja2",
     "rubicon-objc; sys_platform == 'darwin'"
+]
+
+[project.optional-dependencies]
+sensors = [
+    "adafruit-circuitpython-dht",
+    "adafruit-circuitpython-bme280",
+]
+gpio = [
+    "gpiod",
+]
+hardware = [
+    "picframe[sensors]",
+    "picframe[gpio]",
 ]
 
 [project.urls]

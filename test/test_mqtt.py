@@ -118,6 +118,7 @@ def test_publish_state(mock_mqtt_client, mock_controller, mqtt_config):
     mock_controller.brightness = 0.8
     mock_controller.matting_images = 0.5
     mock_controller.memories_today = "off"
+    mock_controller.get_sensors_data.return_value = None
 
     # Call publish_state
     mqtt_interface.publish_state(image="test_image.jpg", image_attr={"attr1": "value1"})
@@ -151,6 +152,7 @@ def test_publish_state_sends_memories_today(mock_mqtt_client, mock_controller, m
     mock_controller.brightness = 0.8
     mock_controller.matting_images = 0.5
     mock_controller.memories_today = "3 found, 1 shown, 2 left"
+    mock_controller.get_sensors_data.return_value = None
 
     mqtt_interface.publish_state()
 

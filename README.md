@@ -51,6 +51,11 @@ When I started 2019 my DIY project building a raspberry powered digital picture 
 
 [Full documentation can be found at the project's wiki](https://github.com/helgeerbe/picframe/wiki).
 
+For this fork's operational scripts (install, runtime sync, ops, monitoring),
+see [`scripts/README.md`](scripts/README.md). For fork-specific architecture
+notes, see [`AGENTS.md`](AGENTS.md). For how the photo shuffle picks order,
+see [`docs/shuffle-behavior.md`](docs/shuffle-behavior.md).
+
 Please note that PictureFrame may change significantly during its development.
 Bug reports, comments, feature requests and fixes are most welcome!
 

@@ -7,20 +7,36 @@ URL = "https://nominatim.openstreetmap.org/reverse?format=geojson&lat={}&lon={}&
 
 
 class GeoReverse:
-    def __init__(self, geo_key, zoom=18, key_list=None):
+    def __init__(self, geo_key, locale_for_address=None, zoom=18, key_list=None):
         self.__logger = logging.getLogger("geo_reverse.GeoReverse")
         self.__geo_key = geo_key
         self.__zoom = zoom
         self.__key_list = key_list
         self.__geo_locations = {}
-        self.__language = locale.getlocale()[0][:2]
+        
+        if locale_for_address:
+            self.__language = locale_for_address[:2]
+        else:
+            self.__language = locale.getlocale()[0][:2]
 
     def get_address(self, lat, lon):
         try:
-            with urllib.request.urlopen(URL.format(lat, lon, self.__zoom, self.__geo_key, self.__language),
-                                        timeout=3.0) as req:
+            reverse_url_formatted = URL.format(lat, lon, self.__zoom, self.__geo_key, self.__language)
+            self.__logger.info(f"== Getting address from coordinates with {reverse_url_formatted}")
+
+            # Nominatim's usage policy requires a User-Agent identifying the
+            # application + a contact; default Python-urllib UA gets 403.
+            # https://operations.osmfoundation.org/policies/nominatim/
+            request = urllib.request.Request(
+                reverse_url_formatted,
+                headers={"User-Agent": f"picframe ({self.__geo_key})"},
+            )
+            with urllib.request.urlopen(request, timeout=3.0) as req:
                 data = json.loads(req.read().decode())
+            
+            self.__logger.info(f"== Response: {data}")
             adr = data['features'][0]['properties']['address']
+            self.__logger.info(f"== Using the {adr}")
             # some experimentation might be needed to get a good set of alternatives in key_list
             adr_list = []
             if self.__key_list is not None:

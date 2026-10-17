@@ -3,6 +3,7 @@ import os
 import time
 import logging
 import locale
+import threading
 from datetime import date
 from picframe import geo_reverse, image_cache, memories
 
@@ -18,7 +19,7 @@ DEFAULT_CONFIG = {
         'blend_type': "blend",  # {"blend":0.0, "burn":1.0, "bump":2.0}
         'font_file': '~/picframe_data/data/fonts/NotoSans-Regular.ttf',
         'shader': '~/picframe_data/data/shaders/blend_new',
-        'show_text_fm': '%b %d, %Y',
+        'show_text_fm': '%d.%m.%Y',
         'show_text_tm': 20.0,
         'show_text_sz': 40,
         'show_text': "name location",
@@ -53,9 +54,21 @@ DEFAULT_CONFIG = {
         'clock_top_bottom': "T",
         'clock_wdt_offset_pct': 3.0,
         'clock_hgt_offset_pct': 3.0,
+        'show_sensors': False,
+        'sensors_justify': 'L',
+        'sensors_text_sz': 20,
+        'sensors_opacity': 1.0,
+        'sensors_update_rate_in_seconds': 60,
+        'outside_sensor_pin': 17,
+        'inside_sensor_address': 0x76,
+        'font_icon_file': '~/picframe_data/data/fonts/Font Awesome 6 Free-Solid-900.otf',
         'menu_text_sz': 40,
         'menu_autohide_tm': 10.0,
         'geo_suppress_list': [],
+        'show_progress_bar': False,
+        'progress_bar_height': 8,
+        'progress_bar_color': [255, 255, 255, 200],
+        'progress_bar_position': 'B',
         'memories_text_one': '{} year ago',
         'memories_text_other': '{} years ago',
     },
@@ -119,6 +132,13 @@ DEFAULT_CONFIG = {
             'power_down': {'enable': False, 'label': 'Power down', 'shortcut': 'p'}
         },
     },
+    'gpio': {
+        'use_gpio': False,
+        'clap_sensor_pin': 4,
+        'prev_touch_sensor_pin': 20,
+        'next_touch_sensor_pin': 21,
+        'clap_delay': 0.7,
+    },
 }
 
 
@@ -128,7 +148,7 @@ class Pic:  # TODO could this be done more elegantly with namedtuple
                  f_number=0, exposure_time=None, iso=0, focal_length=None,
                  make=None, model=None, lens=None, rating=None, latitude=None,
                  longitude=None, width=0, height=0, is_portrait=0, location=None, title=None,
-                 caption=None, tags=None):
+                 caption=None, tags=None, displayed_count=0, last_displayed=0):
         self.fname = fname
         self.last_modified = last_modified
         self.file_id = file_id
@@ -151,6 +171,8 @@ class Pic:  # TODO could this be done more elegantly with namedtuple
         self.tags = tags
         self.caption = caption
         self.title = title
+        self.displayed_count = displayed_count
+        self.last_displayed = last_displayed
         self.years_ago = None  # set by Model when the pic is shown as an On This Day memory
 
 
@@ -166,7 +188,7 @@ class Model:
         with open(configfile, 'r') as stream:
             try:
                 conf = yaml.safe_load(stream)
-                for section in ['viewer', 'model', 'mqtt', 'http', 'peripherals']:
+                for section in ['viewer', 'model', 'mqtt', 'http', 'peripherals', 'gpio']:
                     self.__config[section] = {**DEFAULT_CONFIG[section], **conf[section]}
 
                 self.__logger.debug('config data = %s', self.__config)
@@ -191,12 +213,13 @@ class Model:
         self.__file_index = 0  # pointer to next position in __file_list
         self.__current_pics = (None, None)  # this hold a tuple of (pic, None) or two pic objects if portrait pairs
         self.__num_run_through = 0
+        self.__file_list_lock = threading.Lock()
         self.__memories = None  # memories.Memories for today, rebuilt when the date or filters change
         self.__memories_key = None  # (date, where_clause) that __memories was built for
         self.__memory_ids = set()  # all of today's memory file_ids, kept out of the regular slideshow
         self.__slides_since_memory = 0
         self.__current_is_memory = False
-        self.__going_back = False
+        self.__skip_memory_once = False  # after back or a queue jump, show that image even if a memory is due
 
         model_config = self.get_model_config()  # alias for brevity as used several times below
         try:
@@ -207,6 +230,7 @@ class Model:
         self.__subdirectory = os.path.expanduser(model_config['subdirectory'])
         self.__load_geoloc = model_config['load_geoloc']
         self.__geo_reverse = geo_reverse.GeoReverse(model_config['geo_key'],
+                                                    model_config['locale'],
                                                     key_list=self.get_model_config()['key_list'])
         self.__image_cache = image_cache.ImageCache(self.__pic_dir,
                                                     model_config['follow_links'],
@@ -247,6 +271,9 @@ class Model:
 
     def get_peripherals_config(self):
         return self.__config['peripherals']
+
+    def get_gpio_config(self):
+        return self.__config['gpio']
 
     @property
     def fade_time(self):
@@ -333,6 +360,8 @@ class Model:
     def memories(self, val: bool):
         self.__config['model']['memories'] = val
         self.__memories_key = None  # rebuild on next use
+        if not val:
+            self.__memory_ids = set()  # so the queue panel lists every photo again
         self.__slides_since_memory = 0
 
     def __build_filter(self, val, field):
@@ -393,32 +422,152 @@ class Model:
         self.__reload_files = True
 
     def set_next_file_to_previous_file(self):
-        if self.__number_of_files == 0:
-            return  # TODO deleting last image used to result in ZeroDivisionError
-        # a memory is not part of __file_list, so going back from one only needs to step back one place
-        index = self.__file_index - (1 if self.__current_is_memory else 2)
-        # step over entries that only hold today's memories, as get_next_file would skip them forward again
-        memory_ids = self.__memory_ids if self.memories else set()
-        for _ in range(self.__number_of_files):
-            if not all(f in memory_ids for f in self.__file_list[index % self.__number_of_files]):
+        with self.__file_list_lock:
+            if self.__number_of_files == 0:
+                return  # TODO deleting last image used to result in ZeroDivisionError
+            # a memory is not part of __file_list, so going back from one only needs to step back one place
+            index = self.__file_index - (1 if self.__current_is_memory else 2)
+            # step over entries that only hold today's memories, as get_next_file would skip them forward again
+            memory_ids = self.__memory_ids if self.memories else set()
+            for _ in range(self.__number_of_files):
+                if not all(f in memory_ids for f in self.__file_list[index % self.__number_of_files]):
+                    break
+                index -= 1
+            self.__file_index = index % self.__number_of_files
+        self.__skip_memory_once = True  # don't let a due memory replace the previous image
+
+    def set_next_file_index(self, index):
+        with self.__file_list_lock:
+            if self.__reload_files:
+                return False, "reload_pending"
+            if self.__number_of_files == 0:
+                return False, "empty_queue"
+            try:
+                index = int(index)
+            except (TypeError, ValueError):
+                return False, "invalid_index"
+            if index < 0 or index >= self.__number_of_files:
+                return False, "invalid_index"
+            if not self.__without_memories(self.__file_list[index]):
+                return False, "memory"  # today's memories are only shown as memories, get_next_file skips this slot
+            self.__file_index = index
+        self.__skip_memory_once = True  # show the picked image, not a memory that happens to be due
+        return True, "ok"
+
+    def get_queue_snapshot(self, limit=8):
+        try:
+            limit = max(0, int(limit))
+        except (TypeError, ValueError):
+            limit = 8
+
+        with self.__file_list_lock:
+            queue_slots = list(self.__file_list)
+            next_index = self.__file_index
+            reload_pending = self.__reload_files
+            total_slots = self.__number_of_files
+            current_pics = self.__current_pics
+            current_is_memory = self.__current_is_memory
+
+        displayed_index = None
+        if total_slots > 0 and current_pics[0] is not None and not current_is_memory:  # a memory isn't in the queue
+            displayed_index = (next_index - 1) % total_slots
+
+        # list the slots as get_next_file will show them: without today's memories
+        upcoming_slots = []
+        for offset in range(total_slots):
+            if len(upcoming_slots) >= limit:
                 break
-            index -= 1
-        self.__file_index = index % self.__number_of_files
-        self.__going_back = True  # don't let a due memory replace the previous image
+            slot_index = (next_index + offset) % total_slots
+            file_ids = self.__without_memories(queue_slots[slot_index])
+            if file_ids:
+                upcoming_slots.append(self.__build_queue_slot(slot_index, file_ids))
+
+        current_slot = None
+        if displayed_index is not None:
+            file_ids = self.__without_memories(queue_slots[displayed_index])
+            if file_ids:
+                current_slot = self.__build_queue_slot(displayed_index, file_ids)
+
+        return {
+            "reload_pending": reload_pending,
+            "displayed_index": displayed_index,
+            "next_index": next_index if total_slots > 0 else None,
+            "total_slots": total_slots,
+            "current_slot": current_slot,
+            "upcoming_slots": upcoming_slots,
+            "showing_memory": current_is_memory,
+        }
+
+    def get_queue_thumb_source(self, index):
+        with self.__file_list_lock:
+            if self.__number_of_files == 0:
+                return None
+            try:
+                index = int(index)
+            except (TypeError, ValueError):
+                return None
+            if index < 0 or index >= self.__number_of_files:
+                return None
+            file_ids = self.__without_memories(self.__file_list[index])
+        if not file_ids:
+            return None
+        slot = self.__build_queue_slot(index, file_ids)
+        return slot["primary_path"] if slot is not None else None
+
+    def __without_memories(self, file_ids):
+        """file_ids without today's memories, which are only shown as memories (empty if all are memories)."""
+        memory_ids = self.__memory_ids  # empty while memories are off, see the memories setter
+        if not memory_ids:
+            return tuple(file_ids)
+        return tuple(f for f in file_ids if f not in memory_ids)
+
+    def __build_queue_slot(self, slot_index, file_ids):
+        file_infos = []
+        for file_id in file_ids:
+            row = self.__image_cache.get_file_info_readonly(file_id)
+            if row is None:
+                continue
+            file_infos.append(dict(row))
+
+        if not file_infos:
+            return {
+                "slot_index": slot_index,
+                "file_ids": list(file_ids),
+                "is_pair": len(file_ids) == 2,
+                "primary_label": "Unavailable",
+                "secondary_label": None,
+                "primary_path": None,
+                "thumb_version": 0,
+            }
+
+        primary = file_infos[0]
+        secondary = file_infos[1] if len(file_infos) > 1 else None
+        return {
+            "slot_index": slot_index,
+            "file_ids": list(file_ids),
+            "is_pair": len(file_ids) == 2,
+            "primary_label": os.path.basename(primary["fname"]),
+            "secondary_label": os.path.basename(secondary["fname"]) if secondary is not None else None,
+            "primary_path": primary["fname"],
+            "thumb_version": int(primary.get("last_modified") or 0),
+        }
 
     def get_next_file(self):
-        going_back = self.__going_back
-        self.__going_back = False
+        skip_memory = self.__skip_memory_once
+        self.__skip_memory_once = False
         if self.memories:
             self.__update_memories()
             every = max(1, int(self.get_model_config()['memories_every']))
-            if not going_back and self.__slides_since_memory >= every - 1:
+            if not skip_memory and self.__slides_since_memory >= every - 1:
                 pic = self.__next_memory_pic()
                 if pic is not None:
                     self.__slides_since_memory = 0
-                    self.__current_is_memory = True
-                    self.__current_pics = (pic, None)
+                    with self.__file_list_lock:
+                        self.__current_is_memory = True
+                        self.__current_pics = (pic, None)
                     return self.__current_pics
+        else:
+            self.__memory_ids = set()  # in case memories were turned off while __update_memories was running
         memory_ids = self.__memory_ids if self.memories else set()
         skipped_memories = 0
         missing_images = 0
@@ -439,7 +588,9 @@ class Model:
 
             # If we don't have any files to show, prepare the "no images" image
             # Also, set the reload_files flag so we'll check for new files on the next pass...
-            if self.__number_of_files == 0 or missing_images >= self.__number_of_files:
+            with self.__file_list_lock:
+                number_of_files = self.__number_of_files
+            if number_of_files == 0 or missing_images >= number_of_files:
                 pic1 = Pic(self.__no_files_img, 0, 0)
                 self.__reload_files = True
                 break
@@ -447,23 +598,28 @@ class Model:
             # If we've displayed all images...
             #   If it's time to shuffle, set a flag to do so
             #   Loop back, which will reload and shuffle if necessary
-            if self.__file_index == self.__number_of_files:
-                self.__num_run_through += 1
-                if self.shuffle and self.__num_run_through >= self.get_model_config()['reshuffle_num']:
-                    self.__reload_files = True
-                self.__file_index = 0
+            wrapped = False
+            with self.__file_list_lock:
+                if self.__file_index == self.__number_of_files:
+                    self.__num_run_through += 1
+                    if self.shuffle and self.__num_run_through >= self.get_model_config()['reshuffle_num']:
+                        self.__reload_files = True
+                    self.__file_index = 0
+                    wrapped = True
+            if wrapped:
                 continue
 
             # Load the current image set
-            file_ids = self.__file_list[self.__file_index]
+            with self.__file_list_lock:
+                file_ids = self.__file_list[self.__file_index]
+                self.__file_index += 1
 
             # Today's memories are only shown as memories, not in the regular slideshow.
             # Stop skipping if everything in the list is a memory, to avoid looping forever.
-            if memory_ids and skipped_memories < self.__number_of_files:
+            if memory_ids and skipped_memories < number_of_files:
                 file_ids = tuple(f for f in file_ids if f not in memory_ids)  # keep a portrait partner
                 if not file_ids:
                     skipped_memories += 1
-                    self.__file_index += 1
                     continue
 
             pic_row = self.__image_cache.get_file_info(file_ids[0])
@@ -482,9 +638,6 @@ class Model:
             if (not pic1 and pic2):
                 pic1, pic2 = pic2, pic1
 
-            # Increment the image index for next time
-            self.__file_index += 1
-
             # If pic1 is valid here, everything is OK. Break out of the loop and return the set
             if pic1:
                 break
@@ -493,8 +646,9 @@ class Model:
             # Track the number of times we've looped back so we can abort if we don't have *any* images to display
             missing_images += 1
 
-        self.__current_pics = (pic1, pic2)
-        self.__current_is_memory = False
+        with self.__file_list_lock:
+            self.__current_pics = (pic1, pic2)
+            self.__current_is_memory = False
         self.__slides_since_memory += 1
         return self.__current_pics
 
@@ -541,13 +695,16 @@ class Model:
             return pic
 
     def get_number_of_files(self):
+        with self.__file_list_lock:
+            file_list = list(self.__file_list)
         return sum(
                     sum(1 for pic in pics if pic is not None)
-                    for pics in self.__file_list
+                    for pics in file_list
                 )
 
     def get_current_pics(self):
-        return self.__current_pics
+        with self.__file_list_lock:
+            return self.__current_pics
 
     def delete_file(self):
         # delete the current pic. If it's a portrait pair then only the left one will be deleted
@@ -562,11 +719,12 @@ class Model:
             os.system("mkdir {}".format(move_to_dir))  # problems with ownership using python func
         os.system("mv '{}' '{}'".format(f_to_delete, move_to_dir))  # and with SMB drives
         # find and delete record from __file_list
-        for i, file_rec in enumerate(self.__file_list):
-            if file_rec[0] == pic.file_id:  # database id TODO check that db tidies itself up
-                self.__file_list.pop(i)
-                self.__number_of_files -= 1
-                break
+        with self.__file_list_lock:
+            for i, file_rec in enumerate(self.__file_list):
+                if file_rec[0] == pic.file_id:  # database id TODO check that db tidies itself up
+                    self.__file_list.pop(i)
+                    self.__number_of_files -= 1
+                    break
 
     def __build_where_clause(self):
         if self.subdirectory != "":
@@ -585,14 +743,17 @@ class Model:
         where_clause = self.__build_where_clause()
         self.__memories_key = None  # also pick up photos added to the db since memories were built
 
-        sort_list = []
         recent_n = self.get_model_config()["recent_n"]
+        recent_cutoff = None
         if recent_n > 0:
-            sort_list.append("last_modified < {:.0f}".format(time.time() - 3600 * 24 * recent_n))
+            recent_cutoff = time.time() - 3600 * 24 * recent_n
 
         if self.shuffle:
-            sort_list.append("RANDOM()")
+            file_list = self.__image_cache.query_cache_shuffle(where_clause, recent_cutoff=recent_cutoff)
         else:
+            sort_list = []
+            if recent_cutoff is not None:
+                sort_list.append("last_modified < {:.0f}".format(recent_cutoff))
             if self.__col_names is None:
                 self.__col_names = self.__image_cache.get_column_names()  # do this once
             for col in self.__sort_cols.split(","):
@@ -600,13 +761,14 @@ class Model:
                 if colsplit[0] in self.__col_names and (len(colsplit) == 1 or colsplit[1].upper() in ("ASC", "DESC")):
                     sort_list.append(col)
             sort_list.append("fname ASC")  # always finally sort on this in case nothing else to sort on or sort_cols is "" # noqa: E501
-        sort_clause = ",".join(sort_list)
-
-        self.__file_list = self.__image_cache.query_cache(where_clause, sort_clause)
-        self.__number_of_files = len(self.__file_list)
-        self.__file_index = 0
-        self.__num_run_through = 0
-        self.__reload_files = False
+            sort_clause = ",".join(sort_list)
+            file_list = self.__image_cache.query_cache(where_clause, sort_clause)
+        with self.__file_list_lock:
+            self.__file_list = file_list
+            self.__number_of_files = len(self.__file_list)
+            self.__file_index = 0
+            self.__num_run_through = 0
+            self.__reload_files = False
 
     def __generate_random_string(self, length):
         random_bytes = os.urandom(length // 2)
