@@ -112,6 +112,7 @@ CONTROL_GROUPS = [
         {"id": "text_date",         "type": "bool",   "fn": 'set_show_text={"txt_key":"date","val":$val}',     "val": False},
         {"id": "text_folder",       "type": "bool",   "fn": 'set_show_text={"txt_key":"folder","val":$val}',   "val": False},
         {"id": "text_location",     "type": "bool",   "fn": 'set_show_text={"txt_key":"location","val":$val}', "val": False},
+        {"id": "text_camera",       "type": "bool",   "fn": 'set_show_text={"txt_key":"camera","val":$val}',   "val": False},
         {"id": "clear_text",        "type": "action", "fn": "set_show_text={}",                                 "val": False},
         {"id": "refresh_show_text", "type": "action", "fn": "refresh_show_text={}",                             "val": False},
     ]},

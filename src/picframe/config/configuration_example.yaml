@@ -11,10 +11,12 @@ viewer:
   show_text_fm: "%d.%m.%Y"                # default "%d.%m.%Y", format to show date over the image
   show_text_tm: 20.0                      # default=20.0, time to show text over image with file name
   show_text_sz: 40                        # default=40, text character size
-  show_text: "title caption name date folder location"  # default="title caption name date folder location", show text, include combination of words: title, caption name, date, location, folder
+  show_text: "title caption name date folder location"  # default="title caption name date folder location", show text, include combination of words: title, caption name, date, location, folder, camera
   text_justify: "L"                       # text justification L, C or R
   text_bkg_hgt: 0.25                      # default=0.25 (0.0-1.0), percentage of screen height for text background texture
   text_opacity: 1.0                       # default=1.0 (0.0-1.0), alpha value of text overlay
+  camera_text_sz: 18                      # default=18, camera model character size (shown when show_text includes camera)
+  camera_text_opacity: 0.4                # default=0.4 (0.0-1.0), camera model alpha, multiplied by text_opacity
   fit: False                              # default=False, True => scale image so all visible and leave 'gaps'
                                           #                False => crop image so no 'gaps'
   video_fit_display: False                # default=False, True => scale video to match display size (video may have distortion)
