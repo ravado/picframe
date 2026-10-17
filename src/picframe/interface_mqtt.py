@@ -254,6 +254,8 @@ class InterfaceMQTT:
                             self.__controller.text_is_on("location"), entity_category="config")
         self.__setup_switch(client, "directory_toggle", "mdi:folder", available_topic,
                             self.__controller.text_is_on("directory"), entity_category="config")
+        self.__setup_switch(client, "camera_toggle", "mdi:camera", available_topic,
+                            self.__controller.text_is_on("camera"), entity_category="config")
         self.__setup_switch(client, "text_off", "mdi:badge-account-horizontal-outline",
                             available_topic, entity_category="config")
         self.__setup_switch(client, "display", "mdi:panorama", available_topic,
@@ -659,6 +661,12 @@ class InterfaceMQTT:
             if msg in ("ON", "OFF"):
                 self.__controller.set_show_text("folder", msg)
                 client.publish(state_topic, msg, retain=True)
+        # camera_on
+        elif message.topic == switch_topic_head + "_camera_toggle/set":
+            state_topic = switch_topic_head + "_camera_toggle/state"
+            if msg in ("ON", "OFF"):
+                self.__controller.set_show_text("camera", msg)
+                client.publish(state_topic, msg, retain=True)
         # text_off
         elif message.topic == switch_topic_head + "_text_off/set":
             state_topic = switch_topic_head + "_text_off/state"
@@ -676,6 +684,8 @@ class InterfaceMQTT:
                 state_topic = switch_topic_head + "_title_toggle/state"
                 client.publish(state_topic, "OFF", retain=True)
                 state_topic = switch_topic_head + "_caption_toggle/state"
+                client.publish(state_topic, "OFF", retain=True)
+                state_topic = switch_topic_head + "_camera_toggle/state"
                 client.publish(state_topic, "OFF", retain=True)
         # text_refresh
         elif message.topic == switch_topic_head + "_text_refresh/set":

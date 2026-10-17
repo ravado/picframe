@@ -460,7 +460,7 @@ class ViewerDisplay:
         if pic is not None and (self.__show_text & 64) == 64 and pic.model:  # camera
             camera_string = pic.model.strip()
 
-        if side == 0:
+        if side == 0 and not pair:  # full width replaces right side; pause only refreshes side 0 of a pair
             self.__textblocks[1] = None
             self.__textblocks[3] = None
         # camera line takes the bottom slot, info line sits above it
