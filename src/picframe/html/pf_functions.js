@@ -69,9 +69,13 @@ function renderQueue(snapshot) {
         meta.textContent = `slot ${snapshot.displayed_index + 1} / ${snapshot.total_slots}`;
     }
 
-    current.innerHTML = snapshot.current_slot
-        ? renderQueueSlot(snapshot.current_slot, true)
-        : '<div class="queue-empty">Current image will appear here after the first slide loads.</div>';
+    if (snapshot.current_slot) {
+        current.innerHTML = renderQueueSlot(snapshot.current_slot, true);
+    } else if (snapshot.showing_memory) {  // memories aren't part of the playlist
+        current.innerHTML = '<div class="queue-empty">Showing an On This Day memory.</div>';
+    } else {
+        current.innerHTML = '<div class="queue-empty">Current image will appear here after the first slide loads.</div>';
+    }
 
     if (!snapshot.upcoming_slots || snapshot.upcoming_slots.length === 0) {
         list.innerHTML = '<div class="queue-empty">No upcoming slots available right now.</div>';
@@ -121,6 +125,11 @@ function refreshPage() {
         const elem = document.getElementById(id);
         if (!elem) return;
         let value = el.val;
+
+        if (el.type === "info") {  // read only text from the frame
+            elem.textContent = value;
+            return;
+        }
 
         if (isNumeric(value)) {
             value = parseFloat(value);

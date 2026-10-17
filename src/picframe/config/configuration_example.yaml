@@ -62,6 +62,8 @@ viewer:
   menu_text_sz: 40                        # default=40, menu character size
   menu_autohide_tm: 10.0                  # default=10.0, time in seconds to show menu before auto hiding (0 disables auto hiding)
   geo_suppress_list: []                   # default=None, substrings to remove from the location text
+  memories_text_one: "{} year ago"        # default="{} year ago", label on an On This Day memory taken 1 year ago
+  memories_text_other: "{} years ago"     # default="{} years ago", label on an On This Day memory taken {} years ago
 
   show_progress_bar: False                # default=False, True shows a progress bar indicating time until next photo
   progress_bar_height: 8                  # default=8, height in pixels
@@ -112,6 +114,9 @@ model:
   portrait_pairs: False
   location_filter: ""                     # default="" filter clause for image location
   tags_filter: ""                         # default="" filter clause for image tags
+  memories: False                         # default=False, On This Day: mix in photos taken on today's date in earlier years - can be changed by MQTT
+                                          # only photos with a real EXIF date (DateTimeOriginal) count, so no videos or files without EXIF
+  memories_every: 4                       # default=4, every Nth slide is a memory. Each memory is shown at most once a day
   log_level: "WARNING"                    # default=WARNING, could beDEBUG, INFO, WARNING, ERROR, CRITICAL
   log_file: ""                            # default="" for debugging set this to the path to a file. NB logging messages will
                                           # appended indefinitely so don't forget this. You will need to tidy it up later

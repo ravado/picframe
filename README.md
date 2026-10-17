@@ -31,6 +31,7 @@ When I started 2019 my DIY project building a raspberry powered digital picture 
   - photo metadata overlays (title, location, date, ...)
   - live clock
   - automatic pairing of portrait images
+  - "On This Day" memories: photos taken on today's date in earlier years, labelled "3 years ago"
   - keyboard, mouse and touch screen support
 - Filter by
   - IPTC tags

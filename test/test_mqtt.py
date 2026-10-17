@@ -1,3 +1,4 @@
+import json
 import logging
 from unittest.mock import MagicMock, patch
 import pytest
@@ -116,6 +117,7 @@ def test_publish_state(mock_mqtt_client, mock_controller, mqtt_config):
     mock_controller.fade_time = 2  # Set a real value
     mock_controller.brightness = 0.8
     mock_controller.matting_images = 0.5
+    mock_controller.memories_today = "off"
     mock_controller.get_sensors_data.return_value = None
 
     # Call publish_state
@@ -134,6 +136,29 @@ def test_publish_state(mock_mqtt_client, mock_controller, mqtt_config):
         qos=0,
         retain=False,
     )
+
+
+@patch("paho.mqtt.client.Client")
+def test_publish_state_sends_memories_today(mock_mqtt_client, mock_controller, mqtt_config):
+    """The memories_today text is part of the shared sensor state for Home Assistant."""
+    mock_client_instance = mock_mqtt_client.return_value
+    mqtt_interface = InterfaceMQTT(mock_controller, mqtt_config)
+    mock_controller.get_directory_list.return_value = ("test_dir", ["dir1", "dir2"])
+    mock_controller.get_number_of_files.return_value = 10
+    mock_controller.location_filter = "test_location"
+    mock_controller.tags_filter = "test_tags"
+    mock_controller.time_delay = 5
+    mock_controller.fade_time = 2
+    mock_controller.brightness = 0.8
+    mock_controller.matting_images = 0.5
+    mock_controller.memories_today = "3 found, 1 shown, 2 left"
+    mock_controller.get_sensors_data.return_value = None
+
+    mqtt_interface.publish_state()
+
+    states = [json.loads(c.args[1]) for c in mock_client_instance.publish.call_args_list
+              if c.args[0] == "homeassistant/sensor/picframe_test/state"]
+    assert states and states[-1]["memories_today"] == "3 found, 1 shown, 2 left"
 
 
 @patch("paho.mqtt.client.Client")
