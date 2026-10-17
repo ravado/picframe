@@ -253,7 +253,7 @@ class InterfaceMQTT:
         self.__setup_switch(client, "location_toggle", "mdi:crosshairs-gps", available_topic,
                             self.__controller.text_is_on("location"), entity_category="config")
         self.__setup_switch(client, "directory_toggle", "mdi:folder", available_topic,
-                            self.__controller.text_is_on("directory"), entity_category="config")
+                            self.__controller.text_is_on("folder"), entity_category="config")
         self.__setup_switch(client, "camera_toggle", "mdi:camera", available_topic,
                             self.__controller.text_is_on("camera"), entity_category="config")
         self.__setup_switch(client, "text_off", "mdi:badge-account-horizontal-outline",
