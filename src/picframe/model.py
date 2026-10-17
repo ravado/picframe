@@ -509,13 +509,23 @@ class Model:
             "{} AND {}".format(where_clause, memories.sql_condition(today)))
         start_of_today = time.mktime(today.timetuple())
         self.__memory_ids = {file_id for file_id, _year, _last_displayed in rows}
-        self.__memories = memories.Memories(
+        memories_today = memories.Memories(
             [(file_id, year) for file_id, year, last_displayed in rows
              if last_displayed is None or last_displayed < start_of_today],
             today)
+        memories_today.found = len(self.__memory_ids)  # with the object, so memories_status reads both together
+        self.__memories = memories_today
         self.__memories_key = (today, where_clause)
         self.__logger.info("Memories for %s: %d to show, %d already shown today",
                            today, len(self.__memories), len(self.__memory_ids) - len(self.__memories))
+
+    def memories_status(self):
+        """(found, shown, left) for today's memories, or None if they haven't been looked up for today yet."""
+        memories_today = self.__memories  # read once, as this is called from the http and mqtt threads
+        if memories_today is None or memories_today.today != date.today():
+            return None
+        left = len(memories_today)
+        return memories_today.found, memories_today.found - left, left
 
     def __next_memory_pic(self):
         while True:

@@ -220,6 +220,19 @@ class Controller:
             self.publish_state()
 
     @property
+    def memories_today(self):
+        """Read only: how many of today's memories were found and shown, for the web page and Home Assistant."""
+        if not self.__model.memories:
+            return "off"
+        status = self.__model.memories_status()
+        if status is None:
+            return "not checked yet"
+        found, shown, left = status
+        if found == 0:
+            return "none found"
+        return "{} found, {} shown, {} left".format(found, shown, left)
+
+    @property
     def fade_time(self):
         return self.__model.fade_time
 

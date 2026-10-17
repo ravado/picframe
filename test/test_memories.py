@@ -480,3 +480,58 @@ def test_memory_label_not_part_of_fading_text(viewer):
     v = viewer(show_text="name")
     v._ViewerDisplay__make_text(memory_pic(3), False)
     assert [f.text for f in FakeFixedString.made] == ["a.jpg"]
+
+
+# --- "memories today" status for the web page and Home Assistant ---
+
+def test_model_memories_status(make_model):
+    m, _ = make_model([1, 2, 3], [(10, "2023", 0), (11, "2019", 0), (12, "2019", time.time())], every=2)
+    assert m.memories_status() is None  # not looked up before the first slide
+    next_shown(m, 2)  # 1, then a memory
+    assert m.memories_status() == (3, 2, 1)  # 12 was already shown today, one more shown now
+
+
+def test_controller_memories_today_text():
+    from unittest.mock import MagicMock
+    from picframe.controller import Controller
+    m = MagicMock()
+    c = Controller(m, MagicMock())
+    m.memories = False
+    assert c.memories_today == "off"
+    m.memories = True
+    m.memories_status.return_value = None
+    assert c.memories_today == "not checked yet"
+    m.memories_status.return_value = (0, 0, 0)
+    assert c.memories_today == "none found"
+    m.memories_status.return_value = (3, 1, 2)
+    assert c.memories_today == "3 found, 1 shown, 2 left"
+
+
+class FakeHttpController:
+    memories_today = "3 found, 1 shown, 2 left"
+
+    @property
+    def shuffle(self):
+        return True
+
+    @shuffle.setter
+    def shuffle(self, val):
+        pass
+
+
+def test_http_sends_memories_today(tmp_path):
+    import json as json_module
+    import socket
+    import urllib.request
+    from picframe.interface_http import InterfaceHttp
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    server = InterfaceHttp(FakeHttpController(), str(tmp_path), str(tmp_path), str(tmp_path / "none.jpg"), port=port)
+    try:
+        for query in ("all", "memories_today"):
+            with urllib.request.urlopen("http://127.0.0.1:{}/?{}".format(port, query), timeout=5) as response:
+                assert json_module.loads(response.read())["memories_today"] == "3 found, 1 shown, 2 left"
+    finally:
+        server.shutdown()
+        server.server_close()

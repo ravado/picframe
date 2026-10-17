@@ -15,6 +15,8 @@ function createSpans() {
         }
         if (element.type === "bool" || element.type === "action") {
             span_div_html += `<span class="pf_span off" id=${element_id} onclick="toggle('${element_id}')">${description}</span>`
+        } else if (element.type === "info") { // read only text from the frame
+            span_div_html += `<span class="pf_span">${description}: <span id="${element_id}"></span></span>`;
         } else {
             width = TYPES[element.type][0];
             span_div_html += `<span class="pf_span">${description} <input id="${element_id}"  style="width: ${width}ch;"></span>`;
@@ -42,6 +44,10 @@ function refreshPage() {
     Object.entries(ids).forEach(([element_id, element]) => { //ids declared previous to this script in each page
         let docElement = document.getElementById(element_id);
         let value = element.val;
+        if (element.type === "info") {
+            docElement.textContent = value;
+            return;
+        }
         if (isNumeric(value)) {
             value = parseFloat(value);
             if (element.type === "number") { // integer or float
