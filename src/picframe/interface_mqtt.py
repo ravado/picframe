@@ -213,6 +213,8 @@ class InterfaceMQTT:
                           available_topic, entity_category="config")
         self.__setup_sensor(client, "image_counter", "mdi:camera-burst",
                             available_topic, entity_category="diagnostic")
+        self.__setup_sensor(client, "memories_today", "mdi:calendar-heart",
+                            available_topic, entity_category="diagnostic")
         self.__setup_sensor(client, "image", "mdi:file-image",
                             available_topic, has_attributes=True, entity_category="diagnostic")
 
@@ -266,6 +268,8 @@ class InterfaceMQTT:
                             self.__controller.shuffle)
         self.__setup_switch(client, "paused", "mdi:pause", available_topic,
                             self.__controller.paused)
+        self.__setup_switch(client, "memories", "mdi:calendar-heart", available_topic,
+                            self.__controller.memories)
 
         # buttons
         self.__setup_button(client, "delete", "mdi:delete", available_topic)
@@ -604,6 +608,15 @@ class InterfaceMQTT:
             elif msg == "OFF":
                 self.__controller.shuffle = False
                 client.publish(state_topic, "OFF", retain=True)
+        # memories
+        elif message.topic == switch_topic_head + "_memories/set":
+            state_topic = switch_topic_head + "_memories/state"
+            if msg == "ON":
+                self.__controller.memories = True
+                client.publish(state_topic, "ON", retain=True)
+            elif msg == "OFF":
+                self.__controller.memories = False
+                client.publish(state_topic, "OFF", retain=True)
         # paused
         elif message.topic == switch_topic_head + "_paused/set":
             state_topic = switch_topic_head + "_paused/state"
@@ -791,6 +804,8 @@ class InterfaceMQTT:
         sensor_state_payload["directory"] = actual_dir
         # image counter sensor
         sensor_state_payload["image_counter"] = str(self.__controller.get_number_of_files())
+        # memories found and shown today
+        sensor_state_payload["memories_today"] = self.__controller.memories_today
         # date_from
         sensor_state_payload["date_from"] = int(self.__controller.date_from)
         # date_to
@@ -839,6 +854,10 @@ class InterfaceMQTT:
         # shuffle
         state_topic = switch_topic_head + "_shuffle/state"
         payload = "ON" if self.__controller.shuffle else "OFF"
+        self.__client.publish(state_topic, payload, retain=True)
+        # memories
+        state_topic = switch_topic_head + "_memories/state"
+        payload = "ON" if self.__controller.memories else "OFF"
         self.__client.publish(state_topic, payload, retain=True)
         # display
         state_topic = switch_topic_head + "_display/state"

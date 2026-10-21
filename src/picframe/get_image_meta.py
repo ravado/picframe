@@ -1,4 +1,6 @@
+import json
 import logging
+import math
 from PIL import Image
 from PIL.ExifTags import TAGS, GPSTAGS
 from fractions import Fraction
@@ -9,6 +11,43 @@ try:
     register_heif_opener()
 except ImportError:
     register_heif_opener = None
+
+
+# Longest value (as JSON) kept by tags_to_json. Real EXIF text and numbers are well under 100 bytes;
+# anything longer is usually an embedded blob such as a big UserComment or XMP packet.
+MAX_JSON_VALUE_LEN = 256
+
+
+def _json_value(value):
+    if isinstance(value, (bytes, bytearray)):
+        return None  # binary data: maker notes, thumbnails, print settings, ...
+    if isinstance(value, (list, tuple)):
+        items = [_json_value(v) for v in value]
+        return None if any(v is None for v in items) else items
+    if isinstance(value, str):
+        return value.rstrip('\x00')
+    if isinstance(value, int):
+        return value
+    try:
+        value = float(value)  # e.g. PIL IFDRational
+    except (TypeError, ValueError, ZeroDivisionError):
+        return str(value)
+    return value if math.isfinite(value) else None
+
+
+def tags_to_json(tags, max_value_len=MAX_JSON_VALUE_LEN):
+    """Serialise all tags as a JSON object, leaving out binary and oversized values."""
+    out = {}
+    dropped = []
+    for key, value in tags.items():
+        value = _json_value(value)
+        if value is None or len(json.dumps(value)) > max_value_len:
+            dropped.append(key)
+            continue
+        out[str(key)] = value
+    if dropped:
+        logging.getLogger("get_image_meta").debug("Tags not stored as JSON: %s", dropped)
+    return json.dumps(out)
 
 
 class GetImageMeta:
@@ -140,6 +179,9 @@ class GetImageMeta:
         except Exception as e:
             self.__logger.warning("IPTC loading has failed - if you want to use this you will need to install iptcinfo3 %s -> %s",  # noqa: E501
                                   self.__filename, e)
+
+    def get_all_tags(self):
+        return dict(self.__tags)
 
     def has_exif(self):
         if self.__tags == {}:

@@ -7,7 +7,7 @@ from datetime import datetime
 from PIL import Image, ImageFilter, ImageFile
 import numpy as np
 import pi3d  # type: ignore
-from picframe import mat_image, get_image_meta
+from picframe import mat_image, get_image_meta, memories
 from picframe.video_streamer import VideoStreamer, VIDEO_EXTENSIONS, VideoFrameExtractor
 
 # supported display modes for display switch
@@ -69,6 +69,8 @@ class ViewerDisplay:
         self.__fit = config['fit']
         self.__video_fit_display = config['video_fit_display']
         self.__geo_suppress_list = config['geo_suppress_list']
+        self.__memories_text_one = config['memories_text_one']
+        self.__memories_text_other = config['memories_text_other']
         self.__kenburns = config['kenburns']
         if self.__kenburns:
             self.__kb_up = True
@@ -102,6 +104,8 @@ class ViewerDisplay:
         self.__matter = None
         self.__prev_clock_time = None
         self.__clock_overlay = None
+        self.__memory_label = None  # "N years ago" on an On This Day memory, shown for the whole slide
+        self.__memory_label_old = None  # label of the previous slide while it fades out
         self.__show_clock = config['show_clock']
         self.__clock_justify = config['clock_justify']
         self.__clock_text_sz = config['clock_text_sz']
@@ -499,6 +503,28 @@ class ViewerDisplay:
             block.sprite.position(x, y, 0.1)
             block.sprite.set_alpha(0.0)
         return block
+
+    def __make_memory_label(self, pic):
+        years_ago = getattr(pic, 'years_ago', None)
+        if not years_ago:
+            return None
+        text = memories.years_ago_text(years_ago, self.__memories_text_one, self.__memories_text_other)
+        # top edge, on the side away from the clock, with the same margins as the clock
+        justify = "R" if self.__clock_justify == "L" else "L"
+        wdt_offset = int(self.__display.width * self.__clock_wdt_offset_pct / 100)
+        hgt_offset = int(self.__display.height * self.__clock_hgt_offset_pct / 100)
+        width = self.__display.width - wdt_offset
+        opacity = int(255 * float(self.__text_opacity))
+        label = pi3d.FixedString(self.__font_file, text, font_size=self.__show_text_sz, shader=self.__flat_shader,
+                                 width=width, shadow_radius=3, justify=justify, color=(255, 255, 255, opacity))
+        x = (width - label.sprite.width) // 2
+        if justify == "L":
+            x *= -1
+        y = (self.__display.height - label.sprite.height + self.__show_text_sz * 0.5 - hgt_offset) // 2
+        if self.__show_sensors:  # the sensor values run along the top edge from the left, so go below them
+            y -= self.__sensors_text_sz + 20
+        label.sprite.position(x, y, 0.1)
+        return label
 
     def __draw_clock(self):
         current_time = datetime.now().strftime(self.__clock_format)
@@ -911,6 +937,10 @@ class ViewerDisplay:
             else:  # could have a NO IMAGES selected and being drawn
                 for block in range(4):
                     self.__textblocks[block] = None
+            # unlike the text above, this doesn't depend on show_text or show_text_tm: it shows for the whole
+            # slide and fades in and out with the photo
+            self.__memory_label_old = self.__memory_label
+            self.__memory_label = self.__make_memory_label(pics[0])
 
             if self.__sbg is None:  # first time through
                 self.__sbg = self.__sfg
@@ -964,6 +994,17 @@ class ViewerDisplay:
 
         self.__slide.draw()
         self.__draw_overlay()
+        # memory labels fade in and out with their photo, using the same curve as the slide transition
+        fade = self.__slide.unif[44] if self.__alpha < 1.0 else 1.0
+        if self.__memory_label_old is not None:
+            if self.__alpha < 1.0:
+                self.__memory_label_old.sprite.set_alpha((1.0 - fade) * self.get_brightness())
+                self.__memory_label_old.sprite.draw()
+            else:
+                self.__memory_label_old = None
+        if self.__memory_label is not None:
+            self.__memory_label.sprite.set_alpha(fade * self.get_brightness())
+            self.__memory_label.sprite.draw()
         if self.__show_progress_bar:
             self.__draw_progress_bar(time_delay)
         if self.clock_is_on:
@@ -1035,5 +1076,6 @@ class ViewerDisplay:
     def slideshow_stop(self):
         if self.__video_streamer is not None:
             self.__video_streamer.kill()
-        self.__sensors_data.stop()
+        if self.__sensors_data is not None:  # only created when show_sensors is on and the libraries load
+            self.__sensors_data.stop()
         self.__display.destroy()

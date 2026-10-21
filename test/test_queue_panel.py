@@ -51,6 +51,8 @@ def _make_model(file_list, rows, file_index, reload_pending=False, has_current=T
     model._Model__file_index = file_index
     model._Model__reload_files = reload_pending
     model._Model__current_pics = (object(), None) if has_current else (None, None)
+    model._Model__current_is_memory = False
+    model._Model__memory_ids = set()
     model._Model__file_list_lock = threading.Lock()
     model._Model__image_cache = _ImageCacheStub(rows)
     return model

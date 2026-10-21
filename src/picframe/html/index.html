@@ -73,6 +73,11 @@
                         {% if ctrl.type == "bool" %}
                             {% set btn_class = "pf-btn pf-btn--on" if ctrl.val else "pf-btn pf-btn--off" %}
                             <button class="{{ btn_class }}" data-resting="{{ btn_class }}" id="{{ ctrl.id }}" onclick="toggle('{{ ctrl.id }}')">{{ ctrl.id | replace('_', ' ') }}</button>
+                        {% elif ctrl.type == "info" %}
+                            <div class="pf-field">
+                                <label>{{ ctrl.id | replace('_', ' ') }}</label>
+                                <span id="{{ ctrl.id }}">{{ ctrl.val }}</span>
+                            </div>
                         {% elif ctrl.id == "brightness" %}
                             <div class="pf-field pf-field--slider">
                                 <label for="{{ ctrl.id }}">{{ ctrl.id | replace('_', ' ') }}</label>

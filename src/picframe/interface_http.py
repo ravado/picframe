@@ -103,6 +103,8 @@ CONTROL_GROUPS = [
     {"key": "display", "label": "Display", "danger": False, "controls": [
         {"id": "display_is_on", "type": "bool",   "fn": "setter", "val": False},
         {"id": "shuffle",       "type": "bool",   "fn": "setter", "val": False},
+        {"id": "memories",      "type": "bool",   "fn": "setter", "val": False},
+        {"id": "memories_today", "type": "info",  "fn": "getter", "val": ""},
         {"id": "brightness",    "type": "number", "fn": "setter", "val": 0},
         {"id": "fade_time",     "type": "number", "fn": "setter", "val": 0},
         {"id": "time_delay",    "type": "number", "fn": "setter", "val": 0},
@@ -277,7 +279,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                     self.send_header('Content-type', 'text')
                     self.end_headers()
                     if key == "all":
-                        for subkey in self.server._setters:
+                        for subkey in self.server._setters + self.server._getters:
                             message[subkey] = getattr(self.server._controller, subkey)
                     elif key in dir(self.server._controller):
                         if value != "" or key in ("subdirectory", "location_filter", "tags_filter"):  # parse_qsl can return empty string for value when just querying
@@ -295,7 +297,8 @@ class RequestHandler(BaseHTTPRequestHandler):
                                     getattr(self.server._controller, key)(**json.loads(value))
                             except Exception as e:
                                 message['ERROR'] = 'Excepton:{}>{};'.format(key, e)
-                        if key in self.server._setters:  # can get info back from controller TODO
+                        # can get info back from controller TODO
+                        if key in self.server._setters or key in self.server._getters:
                             message[key] = getattr(self.server._controller, key)
 
                     self.wfile.write(bytes(json.dumps(message), "utf8"))
@@ -356,6 +359,7 @@ class InterfaceHttp(HTTPServer):
         controller_class = controller.__class__
         self._setters = [method for method in dir(controller_class)
                          if 'setter' in dir(getattr(controller_class, method))]
+        self._getters = ["memories_today"]  # read only values also sent to the web page
         self._jinja_env = Environment(
             loader=FileSystemLoader(self._html_path),
             autoescape=select_autoescape(("html", "xml")),
@@ -367,7 +371,7 @@ class InterfaceHttp(HTTPServer):
         t.start()
 
     def _render_index(self):
-        state = {key: getattr(self._controller, key) for key in self._setters}
+        state = {key: getattr(self._controller, key) for key in self._setters + self._getters}
         groups = []
         ids_js = {}
         for group in CONTROL_GROUPS:
